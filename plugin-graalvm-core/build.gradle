@@ -1,0 +1,17 @@
+project.description = 'Core GraalVM library for Kestra'
+
+jar {
+    manifest {
+        attributes(
+            "X-Kestra-Name": project.name,
+            "X-Kestra-Title": "Core GraalVM library",
+            "X-Kestra-Group": project.group + ".graalvm.core",
+            "X-Kestra-Description": project.description,
+            "X-Kestra-Version": project.version
+        )
+    }
+}
+
+dependencies {
+    api "org.graalvm.polyglot:polyglot:$graalVMVersion"
+}

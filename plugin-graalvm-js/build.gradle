@@ -1,0 +1,21 @@
+project.description = 'Evaluate JavaScript scripts using the GraalVM runtime as part of Kestra data workflows.'
+
+jar {
+    manifest {
+        attributes(
+            "X-Kestra-Name": project.name,
+            "X-Kestra-Title": "JavaScript",
+            "X-Kestra-Group": project.group + ".graalvm.js",
+            "X-Kestra-Description": project.description,
+            "X-Kestra-Version": project.version
+        )
+    }
+}
+
+dependencies {
+    implementation project(':plugin-graalvm-core')
+
+    api "org.graalvm.polyglot:js-community:$graalVMVersion"
+
+    testImplementation project(':plugin-graalvm-core').sourceSets.test.output
+}

@@ -1,1 +1,6 @@
 rootProject.name = 'plugin-template'
+include 'plugin-graalvm-js'
+include 'plugin-graalvm-python'
+include 'plugin-graalvm-ruby'
+include 'plugin-graalvm-core'
+
