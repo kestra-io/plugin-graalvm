@@ -1,175 +1,143 @@
 plugins {
     id 'java-library'
     id "idea"
-    id 'jacoco-report-aggregation'
-    id "com.adarshr.test-logger" version "4.0.0" apply(false)
-    id "com.github.johnrengelman.shadow" version "8.1.1" apply(false)
-    id 'ru.vyarus.java-lib' version '3.0.0' apply(false)
-    id 'ru.vyarus.github-info' version '2.0.0' apply(false)
+    id 'jacoco'
+    id "com.adarshr.test-logger" version "4.0.0"
+    id "com.github.johnrengelman.shadow" version "8.1.1"
+    id 'ru.vyarus.java-lib' version '3.0.0'
+    id 'ru.vyarus.github-info' version '2.0.0'
     id 'signing'
     id "io.github.gradle-nexus.publish-plugin" version "2.0.0"
-    id "com.github.ben-manes.versions" version "0.52.0"
-    id 'net.researchgate.release' version '3.1.0'
+    id "com.github.ben-manes.versions" version "0.51.0"
+    id 'net.researchgate.release' version '3.0.2'
 }
 
 def isBuildSnapshot = version.toString().endsWith("-SNAPSHOT")
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    if (isBuildSnapshot) {
+        maven { url "https://s01.oss.sonatype.org/content/repositories/snapshots/" }
+    }
+}
+
+sourceCompatibility = 21
+targetCompatibility = 21
+
+group "io.kestra.plugin"
+description 'Use GraalVM scripting engine with Kestra data workflows.'
 
 tasks.withType(JavaCompile) {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
 }
 
-group "io.kestra.plugin"
+dependencies {
+    // Platform
+    annotationProcessor enforcedPlatform("io.kestra:platform:$kestraVersion")
+    implementation enforcedPlatform("io.kestra:platform:$kestraVersion")
+    api enforcedPlatform("io.kestra:platform:$kestraVersion")
 
-allprojects {
-    repositories {
-        mavenLocal()
-        mavenCentral()
-        if (isBuildSnapshot) {
-            maven { url "https://s01.oss.sonatype.org/content/repositories/snapshots/" }
-        }
-    }
+    // lombok
+    annotationProcessor "org.projectlombok:lombok"
+    compileOnly "org.projectlombok:lombok"
+
+    // micronaut
+    compileOnly "io.micronaut.reactor:micronaut-reactor"
+
+    // kestra
+    annotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
+    compileOnly group: "io.kestra", name: "core", version: kestraVersion
+    compileOnly group: "io.kestra", name: "script", version: kestraVersion
+
+    // GraalVM
+    api "org.graalvm.polyglot:polyglot:$graalVMVersion"
+    api "org.graalvm.polyglot:js-community:$graalVMVersion"
+    api "org.graalvm.polyglot:python-community:$graalVMVersion"
+    api "org.graalvm.polyglot:ruby-community:$graalVMVersion"
+
+    // slf4j JUL bridge
+    api "org.slf4j:jul-to-slf4j"
 }
 
-subprojects {
-    group "io.kestra.plugin"
-
-    apply plugin: "java-library"
-
-    sourceCompatibility = 21
-    targetCompatibility = 21
-
-    apply plugin: "idea"
-
-    configurations {
-        scriptsDriver
-        api.extendsFrom(scriptsDriver)
-    }
-
-    dependencies {
-        // Platform
-        annotationProcessor enforcedPlatform("io.kestra:platform:$kestraVersion")
-        implementation enforcedPlatform("io.kestra:platform:$kestraVersion")
-        api enforcedPlatform("io.kestra:platform:$kestraVersion")
-
-        // lombok
-        annotationProcessor "org.projectlombok:lombok"
-        compileOnly "org.projectlombok:lombok"
-
-        compileOnly 'io.micronaut:micronaut-context'
-        compileOnly "io.micronaut.reactor:micronaut-reactor"
-
-        // Kestra
-        compileOnly group: "io.kestra", name: "core", version: kestraVersion
-        compileOnly group: "io.kestra", name: "script", version: kestraVersion
-        annotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
-
-        // Logs
-        compileOnly 'ch.qos.logback:logback-classic'
-    }
-}
 
 /**********************************************************************************************************************\
  * Test
  **********************************************************************************************************************/
-subprojects {
-    apply plugin: "com.adarshr.test-logger"
+test {
+    useJUnitPlatform()
+}
 
-    test {
-        useJUnitPlatform()
-    }
+testlogger {
+    theme "mocha-parallel"
+    showExceptions true
+    showFullStackTraces true
+    showStandardStreams true
+    showPassedStandardStreams false
+    showSkippedStandardStreams true
+}
 
-    testlogger {
-        theme "mocha-parallel"
-        showExceptions true
-        showFullStackTraces true
-        showStandardStreams true
-        showPassedStandardStreams false
-        showSkippedStandardStreams true
-    }
+dependencies {
+    // Platform
+    testAnnotationProcessor enforcedPlatform("io.kestra:platform:$kestraVersion")
+    testImplementation enforcedPlatform("io.kestra:platform:$kestraVersion")
 
-    dependencies {
-        // Platform
-        testAnnotationProcessor enforcedPlatform("io.kestra:platform:$kestraVersion")
-        testImplementation enforcedPlatform("io.kestra:platform:$kestraVersion")
+    // lombok
+    testAnnotationProcessor "org.projectlombok:lombok"
+    testCompileOnly 'org.projectlombok:lombok'
 
-        // Kestra
-        testAnnotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
+    // micronaut
+    testAnnotationProcessor "io.micronaut:micronaut-inject-java"
+    testAnnotationProcessor "io.micronaut.validation:micronaut-validation-processor"
+    testImplementation "io.micronaut.test:micronaut-test-junit5"
+    testImplementation "io.micronaut.validation:micronaut-validation"
 
-        // lombok
-        testAnnotationProcessor "org.projectlombok:lombok"
-        testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
+    testImplementation group: "io.kestra", name: "core", version: kestraVersion
+    testImplementation group: "io.kestra", name: "tests", version: kestraVersion
+    testImplementation group: "io.kestra", name: "repository-memory", version: kestraVersion
+    testImplementation group: "io.kestra", name: "runner-memory", version: kestraVersion
+    testImplementation group: "io.kestra", name: "storage-local", version: kestraVersion
 
-        // micronaut
-        testAnnotationProcessor "io.micronaut:micronaut-inject-java"
-        testAnnotationProcessor "io.micronaut.validation:micronaut-validation-processor"
-        testImplementation "io.micronaut.test:micronaut-test-junit5"
-        testImplementation "io.micronaut.reactor:micronaut-reactor"
-
-        // test deps needed only for to have a runner
-        testImplementation group: "io.kestra", name: "core", version: kestraVersion
-        testImplementation group: "io.kestra", name: "tests", version: kestraVersion
-        testImplementation group: "io.kestra", name: "script", version: kestraVersion
-        testImplementation group: "io.kestra", name: "repository-memory", version: kestraVersion
-        testImplementation group: "io.kestra", name: "runner-memory", version: kestraVersion
-        testImplementation group: "io.kestra", name: "storage-local", version: kestraVersion
-
-        // test
-        testImplementation "org.junit.jupiter:junit-jupiter-engine"
-        testImplementation 'org.mockito:mockito-junit-jupiter'
-        testImplementation "org.hamcrest:hamcrest"
-        testImplementation "org.hamcrest:hamcrest-library"
-        testImplementation "org.junit-pioneer:junit-pioneer"
-        testImplementation "org.junit.jupiter:junit-jupiter-params"
-    }
+    testImplementation "org.junit.jupiter:junit-jupiter-engine"
+    testImplementation "org.junit.jupiter:junit-jupiter-params"
+    testImplementation "org.hamcrest:hamcrest"
+    testImplementation "org.hamcrest:hamcrest-library"
 }
 
 /**********************************************************************************************************************\
  * Allure Reports
  **********************************************************************************************************************/
-subprojects {
-    dependencies {
-        testImplementation enforcedPlatform("io.kestra:platform:$kestraVersion")
-        testImplementation "io.qameta.allure:allure-junit5"
-    }
+dependencies {
+    testImplementation enforcedPlatform("io.kestra:platform:$kestraVersion")
+    testImplementation "io.qameta.allure:allure-junit5"
+}
 
-    configurations {
-        agent {
-            canBeResolved = true
-            canBeConsumed = true
-        }
+configurations {
+    agent {
+        canBeResolved = true
+        canBeConsumed = true
     }
+}
 
-    dependencies {
-        agent "org.aspectj:aspectjweaver:1.9.23"
-    }
+dependencies {
+    agent "org.aspectj:aspectjweaver:1.9.22.1"
+}
 
-    test {
-        jvmArgs = [ "-javaagent:${configurations.agent.singleFile}" ]
-    }
+test {
+    jvmArgs = [ "-javaagent:${configurations.agent.singleFile}" ]
 }
 
 /**********************************************************************************************************************\
  * Jacoco
  **********************************************************************************************************************/
-subprojects {
-    apply plugin: 'jacoco'
-
-    test {
-        finalizedBy jacocoTestReport
-    }
+test {
+    finalizedBy jacocoTestReport
 }
 
-dependencies {
-    jacocoAggregation subprojects
-}
-
-tasks.named('testCodeCoverageReport') {
-    dependsOn = subprojects.test
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('testCodeCoverageReport', JacocoReport)
+jacocoTestReport {
+    dependsOn test
 }
 
 /**********************************************************************************************************************\
@@ -186,49 +154,42 @@ nexusPublishing {
     }
 }
 
-subprojects { Project subproject ->
-    apply plugin: "com.adarshr.test-logger"
-    apply plugin: "maven-publish"
-    apply plugin: "signing"
-    apply plugin: 'ru.vyarus.github-info'
-    apply plugin: 'ru.vyarus.java-lib'
+tasks.withType(GenerateModuleMetadata).configureEach {
+    // Suppression this validation error as we want to enforce the Kestra platform
+    suppressedValidationErrors.add('enforced-platform')
+}
 
-    github {
-        user 'kestra-io'
-        repository 'plugin-graalvm'
-        license 'Apache'
-    }
-
-    if (subproject.name != "plugin-graalvm-core") {
-        apply plugin: "com.github.johnrengelman.shadow"
-
-        shadowJar {
-            dependsOn(":plugin-graalvm-core:jar")
-            archiveClassifier.set(null)
-            mergeServiceFiles()
-            dependencies {
-                exclude "com/fasterxml/jackson/**"
-                exclude "org/slf4j/**"
-            }
-        }
-    }
-
-    maven.pom {
-        developers {
-            developer {
-                id = "tchiotludo"
-                name = "Ludovic Dehon"
-            }
-        }
-    }
-
-    tasks.withType(GenerateModuleMetadata).configureEach {
-        // Suppression this validation error as we want to enforce the Kestra platform
-        suppressedValidationErrors.add('enforced-platform')
+jar {
+    manifest {
+        attributes(
+            "X-Kestra-Name": project.name,
+            "X-Kestra-Title": "Google Cloud",
+            "X-Kestra-Group": project.group + ".gcp",
+            "X-Kestra-Description": project.description,
+            "X-Kestra-Version": project.version
+        )
     }
 }
 
+maven.pom {
+    developers {
+        developer {
+            id = "tchiotludo"
+            name = "Ludovic Dehon"
+        }
+    }
+}
 
+shadowJar {
+    zip64 true
+    archiveClassifier.set(null)
+    mergeServiceFiles()
+}
+
+github {
+    user 'kestra-io'
+    license 'Apache'
+}
 
 /**********************************************************************************************************************\
  * Version
@@ -243,14 +204,6 @@ release {
     git {
         requireBranch.set('master')
     }
-
-    // Dynamically set properties with default values
-    failOnSnapshotDependencies = (project.hasProperty('release.failOnSnapshotDependencies')
-        ? project.property('release.failOnSnapshotDependencies').toBoolean()
-        : true)
-    pushReleaseVersionBranch = (project.hasProperty('release.pushReleaseVersionBranch')
-        ? project.property('release.pushReleaseVersionBranch').toString()
-        : null)
 }
 
 /**********************************************************************************************************************\
