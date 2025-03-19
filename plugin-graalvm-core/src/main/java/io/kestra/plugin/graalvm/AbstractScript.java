@@ -45,10 +45,11 @@ abstract class AbstractScript extends Task {
                 .allowHostClassLoading(true)
                 // restrict loading class to java.* and io.kestra.core.models.*
                 .allowHostClassLookup(name -> name.startsWith("java.") || name.startsWith("io.kestra.core.models"))
-                // log to sysout TODO check that!
-                .logHandler(System.out)
+                // log to the run context logger
+                .logHandler(new SLF4JJULHandler(runContext.logger()))
                 .build();
     }
+
 
     private Engine getEngine() {
         // double-checked locking idiom
