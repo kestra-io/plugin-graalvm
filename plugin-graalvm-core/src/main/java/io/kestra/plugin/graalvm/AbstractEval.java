@@ -1,6 +1,6 @@
 package io.kestra.plugin.graalvm;
 
-import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,11 +22,10 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
     @Schema(
         title = "A List of outputs variables that will be usable in outputs."
     )
-    @PluginProperty
-    protected List<String> outputs;
+    protected Property<List<String>> outputs;
 
     protected Output run(RunContext runContext, String languageId) throws Exception {
-        try (Context context = buildContext()) {
+        try (Context context = buildContext(runContext)) {
             var bindings = context.getBindings(languageId);
             // add all common vars to bindings in case of concurrency
             runContext.getVariables().forEach((key, value) -> bindings.putMember(key, value));
@@ -36,27 +35,28 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
             var source = generateSource(languageId, runContext);
             var result = context.eval(source);
 
+            var renderedOutputs = runContext.render(this.outputs).asList(String.class);
             Output.OutputBuilder builder = Output.builder();
             if (result.canExecute()) {
                 var results = result.execute();
-                if (results.hasMembers() && outputs != null && !outputs.isEmpty()) {
-                    builder.outputs(gatherOutputs(results));
+                if (results.hasMembers() && !renderedOutputs.isEmpty()) {
+                    builder.outputs(gatherOutputs(renderedOutputs, results));
                 }
             }
             else if (result.isHostObject()){
                 builder.result(result.asHostObject());
             }
-            else if (result.hasMembers() && outputs != null && !outputs.isEmpty()) {
-                builder.outputs(gatherOutputs(result));
+            else if (result.hasMembers() && !renderedOutputs.isEmpty()) {
+                builder.outputs(gatherOutputs(renderedOutputs, result));
             }
 
             return builder.build();
         }
     }
 
-    private Map<String, Object> gatherOutputs(Value value) {
+    private Map<String, Object> gatherOutputs(List<String> renderedOutputs, Value value) {
         Map<String, Object> outputs = new HashMap<>();
-        this.outputs.forEach(s -> outputs.put(s, as(value.getMember(s))));
+        renderedOutputs.forEach(s -> outputs.put(s, as(value.getMember(s))));
         return outputs;
     }
 
@@ -114,7 +114,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         private Object result;
 
         @Schema(
-            title = "The captured outputs as declared on task property."
+            title = "The captured outputs as declared on the `outputs` task property."
         )
         private final Map<String, Object> outputs;
     }

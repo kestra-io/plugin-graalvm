@@ -26,11 +26,10 @@ import lombok.experimental.SuperBuilder;
             code = """
                 id: evalJs
                 namespace: company.team
-                
+
                 tasks:
                   - id: evalJs
                     type: io.kestra.plugin.graalvm.js.Eval
-                    disabled: true
                     outputs:
                       - out
                       - map
@@ -39,6 +38,7 @@ import lombok.experimental.SuperBuilder;
                         var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
                         var File = Java.type('java.io.File');
                         var FileOutputStream = Java.type('java.io.FileOutputStream');
+                        logger.info('Task started');
                         runContext.metric(Counter.of('total', 666, 'name', 'bla'));
                         map = {'test': 'here'};
                         var tempFile = runContext.workingDir().createTempFile().toFile();
@@ -48,7 +48,8 @@ import lombok.experimental.SuperBuilder;
                         return {"map": map, "out": out};
                       })"""
         )
-    }
+    },
+    beta = true
 )
 public class Eval extends AbstractEval {
     @Override

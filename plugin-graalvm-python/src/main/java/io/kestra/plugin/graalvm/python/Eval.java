@@ -26,11 +26,10 @@ import lombok.experimental.SuperBuilder;
             code = """
                     id: evalPython
                     namespace: company.team
-                    
+
                     tasks:
                       - id: evalPython
                         type: io.kestra.plugin.graalvm.python.Eval
-                        disabled: true
                         outputs:
                           - out
                           - map
@@ -40,6 +39,7 @@ import lombok.experimental.SuperBuilder;
                             import java.io.FileOutputStream as FileOutputStream
                             # types other than one coming from the Java SDK must be defined this way
                             Counter = java.type("io.kestra.core.models.executions.metrics.Counter")
+                            logger.info('Task started')
                             runContext.metric(Counter.of('total', 666, 'name', 'bla'))
                             map = {'test': 'here'}
                             tempFile = runContext.workingDir().createTempFile().toFile()
@@ -48,7 +48,8 @@ import lombok.experimental.SuperBuilder;
                             out = runContext.storage().putFile(tempFile)
                             {"map": map, "out": out}"""
         )
-    }
+    },
+    beta = true
 )
 public class Eval extends AbstractEval {
     @Override

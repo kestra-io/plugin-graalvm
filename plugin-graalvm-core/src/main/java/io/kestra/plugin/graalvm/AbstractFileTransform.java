@@ -1,7 +1,9 @@
 package io.kestra.plugin.graalvm;
 
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
@@ -36,23 +38,21 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     @NotNull
     @Schema(
         title = "Source file containing rows to transform.",
-        description = "Can be Kestra's internal storage URI, a map or a list."
+        description = "Can be a Kestra internal storage URI, a map or a list."
     )
-    @PluginProperty(dynamic = true)
-    private String from;
+    private Property<String> from;
 
     @Min(2)
     @Schema(
         title = "Number of concurrent parallel transformations to execute.",
         description = "Take care that the order is **not respected** if you use parallelism."
     )
-    @PluginProperty
-    private Integer concurrent;
+    private Property<Integer> concurrent;
 
     @SuppressWarnings("unchecked")
     protected Output run(RunContext runContext, String languageId) throws Exception {
         // temp out file
-        String from = runContext.render(this.from);
+        String from = runContext.render(this.from).as(String.class).orElseThrow();
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         var source = generateSource(languageId, runContext);
 
@@ -97,13 +97,13 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         Flux<Object> flowable,
         Source scripts,
         Writer output
-    ) throws IOException {
-        try (Context context = buildContext()) {
+    ) throws IOException, IllegalVariableEvaluationException {
+        try (Context context = buildContext(runContext)) {
             Flux<Object> sequential;
 
             if (this.concurrent != null) {
                 sequential = flowable
-                        .parallel(this.concurrent)
+                        .parallel(runContext.render(this.concurrent).as(Integer.class).orElseThrow())
                         .runOn(Schedulers.boundedElastic())
                         .flatMap(this.convert(runContext, context, scripts))
                         .sequential();
@@ -157,7 +157,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
             title = "URI of a temporary result file.",
-            description = "The file will be serialized as ion file."
+            description = "The file will be serialized as an ION file."
         )
         private final URI uri;
     }

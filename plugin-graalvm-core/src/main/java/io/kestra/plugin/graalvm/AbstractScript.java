@@ -2,13 +2,12 @@ package io.kestra.plugin.graalvm;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
@@ -23,14 +22,15 @@ import org.graalvm.polyglot.io.IOAccess;
 @NoArgsConstructor
 abstract class AbstractScript extends Task {
     @Schema(
-        title = "A full script"
+        title = "The script to evaluate"
     )
-    @PluginProperty(dynamic = true)
-    protected String script;
+    @NotNull
+    protected Property<String> script;
 
+    @Getter(AccessLevel.NONE)
     private volatile transient Engine engine;
 
-    protected Context buildContext() {
+    protected Context buildContext(RunContext runContext) {
         return Context.newBuilder()
                 .engine(getEngine())
                 // allow I/O
@@ -65,7 +65,7 @@ abstract class AbstractScript extends Task {
     }
 
     protected Source generateSource(String languageId, RunContext runContext) throws IllegalVariableEvaluationException {
-        var rendered = runContext.render(this.script);
+        var rendered = runContext.render(this.script).as(String.class).orElseThrow();
         return Source.create(languageId, rendered);
     }
 }

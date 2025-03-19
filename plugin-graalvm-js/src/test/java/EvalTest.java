@@ -1,3 +1,4 @@
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.plugin.graalvm.js.Eval;
@@ -17,11 +18,11 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(
+            .script(Property.of(
                 """
                 var BigDecimal = Java.type('java.math.BigDecimal');
                 BigDecimal.valueOf(10).pow(20)"""
-            )
+            ))
             .build();
 
         var runOutput = task.run(runContext);
@@ -33,10 +34,10 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(
+            .script(Property.of(
                 "({ id   : 42, text : '42', arr  : [1,42,3] })"
-            )
-            .outputs(List.of("id", "text"))
+            ))
+            .outputs(Property.of(List.of("id", "text")))
             .build();
 
         var runOutput = task.run(runContext);
@@ -50,7 +51,7 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(
+            .script(Property.of(
                 """
                     (function() {
                     var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
@@ -67,8 +68,8 @@ class EvalTest {
                     out = runContext.storage().putFile(tempFile);
                     return {"map": map, "out": out};
                     })"""
-            )
-            .outputs(List.of("map", "out"))
+            ))
+            .outputs(Property.of(List.of("map", "out")))
             .build();
 
         var runOutput = task.run(runContext);

@@ -17,7 +17,7 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a  JavaScript script using the GraalVM scripting engine."
+    title = "Execute a  Ruby script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
@@ -26,7 +26,7 @@ import lombok.experimental.SuperBuilder;
             code = """
                     id: evalRuby
                     namespace: company.team
-                    
+
                     tasks:
                       - id: evalRuby
                         type: io.kestra.plugin.graalvm.ruby.Eval
@@ -34,6 +34,7 @@ import lombok.experimental.SuperBuilder;
                           - map
                         script: |
                           Counter = Java.type('io.kestra.core.models.executions.metrics.Counter')
+                          # logger.info('Task started')
                           # runContext.metric(Counter.of('total', 666, 'name', 'bla'))
                           map = {'test': 'here'}
                           # var tempFile = runContext.workingDir().createTempFile().toFile()
@@ -43,7 +44,8 @@ import lombok.experimental.SuperBuilder;
                           # return {'map': map, 'out': out}
                           {'map': map}"""
         )
-    }
+    },
+    beta = true
 )
 public class Eval extends AbstractEval {
     @Override
