@@ -43,11 +43,12 @@ import org.graalvm.polyglot.Value;
                           runContext = Polyglot.import('runContext')
                           logger.info('Task started')
                           runContext.metric(Counter.of('total', 666, 'name', 'bla'))
-                          map = {'test': 'here'}
+                          map = {test: 'here'}
                           tempFile = runContext.workingDir().createTempFile().toFile()
                           output = FileOutputStream.new(tempFile)
                           output.write(256)
-                          out = runContext.storage().putFile(tempFile)"""
+                          out = runContext.storage().putFile(tempFile)
+                          return {map: map, out: out}"""
         )
     },
     beta = true

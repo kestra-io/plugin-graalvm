@@ -46,6 +46,8 @@ abstract class AbstractScript extends Task {
                 .logHandler(new SLF4JJULHandler(runContext.logger()))
                 // needed for Ruby
                 .allowPolyglotAccess(PolyglotAccess.ALL)
+                // needed for Ruby
+                .allowCreateThread(true)
                 .build();
     }
 

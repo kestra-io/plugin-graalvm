@@ -56,12 +56,20 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
 
     private Map<String, Object> gatherOutputs(List<String> renderedOutputs, Value value) {
         Map<String, Object> outputs = new HashMap<>();
-        renderedOutputs.forEach(s -> outputs.put(s, as(value.getMember(s))));
+
+        if (value.hasHashEntries()) {
+            Map<String, Object> results = (Map<String, Object>) as(value);
+            renderedOutputs.forEach(s -> outputs.put(s, as(value.getHashValue(s))));
+            return results;
+        } else {
+            renderedOutputs.forEach(s -> outputs.put(s, as(value.getMember(s))));
+        }
+
         return outputs;
     }
 
     private Object as(Value member) {
-        if (member == null || member.canExecute()) { // we should not have an executable here, let's return null to be safe
+        if (member == null) {
             return null;
         }
         if (member.isString()) {

@@ -69,7 +69,6 @@ class EvalTest {
         assertThat(runOutput, notNullValue());
         assertThat(runOutput.getResult(), nullValue());
         assertThat(runOutput.getOutputs(), aMapWithSize(2));
-        System.out.println(runOutput.getOutputs());
         assertThat((Map<String, Object>) runOutput.getOutputs().get("map"), aMapWithSize(1));
         assertThat(((Map<String, Object>) runOutput.getOutputs().get("map")).get("test"), is("here"));
         assertThat(((URI) runOutput.getOutputs().get("out")).toString(), startsWith("kestra:///"));
