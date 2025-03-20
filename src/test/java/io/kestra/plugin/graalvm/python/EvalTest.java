@@ -73,4 +73,29 @@ class EvalTest {
         assertThat(((Map<String, Object>) runOutput.getOutputs().get("map")).get("test"), is("here"));
         assertThat(((URI) runOutput.getOutputs().get("out")).toString(), startsWith("kestra:///"));
     }
+
+    @Test
+    void runFunctionWithModule() throws Exception {
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .modules(Property.of(
+                Map.of("hello.py", """
+                    def hello(name):
+                      print("Hello " + name)
+                    """)
+            ))
+            .script(Property.of(
+                """
+                    import hello
+                    hello.hello("Loïc")
+                    """
+            ))
+            .build();
+
+        var runOutput = task.run(runContext);
+        assertThat(runOutput, notNullValue());
+    }
 }

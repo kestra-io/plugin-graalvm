@@ -17,12 +17,13 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a  JavaScript script using the GraalVM scripting engine."
+    title = "Execute a JavaScript script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
         @Example(
             full = true,
+            title = "Execute a JavaScript script using the GraalVM scripting engine.",
             code = """
                 id: evalJs
                 namespace: company.team

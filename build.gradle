@@ -55,6 +55,7 @@ dependencies {
     api "org.graalvm.polyglot:polyglot:$graalVMVersion"
     api "org.graalvm.polyglot:js-community:$graalVMVersion"
     api "org.graalvm.polyglot:python-community:$graalVMVersion"
+    api "org.graalvm.python:python-embedding:$graalVMVersion"
     api "org.graalvm.polyglot:ruby-community:$graalVMVersion"
 
     // slf4j JUL bridge
