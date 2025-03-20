@@ -19,12 +19,13 @@ import org.graalvm.polyglot.Value;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a  Ruby script using the GraalVM scripting engine."
+    title = "Execute a Ruby script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
         @Example(
             full = true,
+            title = "Execute a Ruby script using the GraalVM scripting engine.",
             code = """
                     id: evalRuby
                     namespace: company.team

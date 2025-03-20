@@ -28,7 +28,7 @@ abstract class AbstractScript extends Task {
     private volatile transient Engine engine;
 
     protected Context buildContext(RunContext runContext) {
-        return Context.newBuilder()
+        return contextBuilder(runContext)
                 .engine(getEngine())
                 // allow I/O
                 .allowIO(IOAccess.ALL)
@@ -48,6 +48,7 @@ abstract class AbstractScript extends Task {
                 .allowPolyglotAccess(PolyglotAccess.ALL)
                 // needed for Ruby
                 .allowCreateThread(true)
+                .currentWorkingDirectory(runContext.workingDir().path())
                 .build();
     }
 
@@ -55,6 +56,9 @@ abstract class AbstractScript extends Task {
         return context.getBindings(languageId);
     }
 
+    protected Context.Builder contextBuilder(RunContext runContext) {
+        return Context.newBuilder();
+    }
 
     private Engine getEngine() {
         // double-checked locking idiom
