@@ -24,27 +24,28 @@ import lombok.experimental.SuperBuilder;
         @Example(
             full = true,
             code = """
-        id: transformPython
-        namespace: company.team
+              id: transformPython
+              namespace: company.team
 
-        inputs:
-          - id: file
-            type: FILE
-
-        tasks:
-          - id: transformPython
-            type: io.kestra.plugin.graalvm.python.FileTransform
-            from: "{{ inputs.file }}"
-            script: |
-              if row['title'] == 'Main_Page' or row['title'] == 'Special:Search' or row['title'] == '-':
-                # remove un-needed row
-                row = None
-              else:
-                # add a 'time' column
-                row['time'] = str(row['date'])[11:]
-                # modify the 'date' column to only keep the date part
-                row['date'] = str(row['date'])[0:10]
-        """
+              tasks:
+                - id: download
+                  type: io.kestra.plugin.core.http.Download
+                  uri: https://dummyjson.com/carts/1
+                - id: jsonToIon
+                  type: io.kestra.plugin.serdes.json.JsonToIon
+                  from: "{{outputs.download.uri}}"
+                - id: transformPython
+                  type: io.kestra.plugin.graalvm.python.FileTransform
+                  from: "{{ outputs.jsonToIon.uri }}"
+                  script: |
+                    if row['id'] == 666:
+                      # remove un-needed row
+                      row = None
+                    else:
+                      # remove the 'products' column
+                      row['products'] = None
+                      # add a 'totalItems' column
+                      row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
         )
     },
     beta = true

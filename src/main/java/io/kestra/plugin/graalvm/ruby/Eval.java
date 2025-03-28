@@ -47,7 +47,7 @@ import org.graalvm.polyglot.Value;
                           map = {test: 'here'}
                           tempFile = runContext.workingDir().createTempFile().toFile()
                           output = FileOutputStream.new(tempFile)
-                          output.write(256)
+                          output.write('Hello World'.bytes)
                           out = runContext.storage().putFile(tempFile)
                           return {map: map, out: out}"""
         )

@@ -44,7 +44,7 @@ import lombok.experimental.SuperBuilder;
                         map = {'test': 'here'};
                         var tempFile = runContext.workingDir().createTempFile().toFile();
                         var output = new FileOutputStream(tempFile);
-                        output.write(256);
+                        output.write([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]);
                         out = runContext.storage().putFile(tempFile);
                         return {"map": map, "out": out};
                       })"""

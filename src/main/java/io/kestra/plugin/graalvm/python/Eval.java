@@ -35,6 +35,27 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
     examples = {
         @Example(
             full = true,
+            title = "Parse a downloaded JSON and update one of its fields.",
+            code = """
+                id: parse_json_data
+                namespace: company.team
+
+                tasks:
+                  - id: download
+                    type: io.kestra.plugin.core.http.Download
+                    uri: http://xkcd.com/info.0.json
+
+                  - id: graal
+                    type: io.kestra.plugin.graalvm.python.Eval
+                    outputs:
+                      - data
+                    script: |
+                      data = {{ read(outputs.download.uri )}}
+                      data["next_month"] = int(data["month"]) + 1
+                """
+        ),
+        @Example(
+            full = true,
             title = "Execute a Python script using the GraalVM scripting engine.",
             code = """
                     id: evalPython
@@ -57,7 +78,7 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
                             map = {'test': 'here'}
                             tempFile = runContext.workingDir().createTempFile().toFile()
                             output = FileOutputStream(tempFile)
-                            output.write(256)
+                            output.write('Hello World'.encode('utf-8'))
                             out = runContext.storage().putFile(tempFile)
                             {"map": map, "out": out}"""
         ),
