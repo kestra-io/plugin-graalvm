@@ -27,23 +27,25 @@ import lombok.experimental.SuperBuilder;
             id: transformJs
             namespace: company.team
 
-            inputs:
-              - id: file
-                type: FILE
-
             tasks:
+              - id: download
+                type: io.kestra.plugin.core.http.Download
+                uri: https://dummyjson.com/carts/1
+              - id: jsonToIon
+                type: io.kestra.plugin.serdes.json.JsonToIon
+                from: "{{outputs.download.uri}}"
               - id: transformJs
                 type: io.kestra.plugin.graalvm.js.FileTransform
-                from: "{{ inputs.file }}"
+                from: "{{ outputs.jsonToIon.uri }}"
                 script: |
-                  if (row['title'] === 'Main_Page' || row['title'] === 'Special:Search' || row['title'] === '-') {
+                  if (row['id'] === 666) {
                     // remove un-needed row
                     row = null
                   } else {
-                    // add a 'time' column
-                    row['time'] = String(row['date']).substring(11)
-                    // modify the 'date' column to only keep the date part
-                    row['date'] = String(row['date']).substring(0, 10)
+                    // remove the 'products' column
+                    row['products'] = null;
+                    // add a 'totalItems' column
+                    row['totalItems'] = row['totalProducts'] * row['totalQuantity']
                   }
             """
         )
