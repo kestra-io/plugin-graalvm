@@ -19,7 +19,7 @@ import org.graalvm.polyglot.Value;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a  JavaScript script using the GraalVM scripting engine."
+    title = "Execute a Ruby script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
