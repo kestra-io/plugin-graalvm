@@ -17,7 +17,7 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a  JavaScript script using the GraalVM scripting engine."
+    title = "Execute a Python script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
