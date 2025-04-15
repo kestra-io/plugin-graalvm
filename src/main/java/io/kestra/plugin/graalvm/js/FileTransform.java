@@ -17,7 +17,7 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a JavaScript script using the GraalVM scripting engine."
+    title = "Transform a file from Kestra with a JavaScript script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
