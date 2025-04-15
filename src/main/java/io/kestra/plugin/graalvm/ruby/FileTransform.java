@@ -19,7 +19,7 @@ import org.graalvm.polyglot.Value;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a Ruby script using the GraalVM scripting engine."
+    title = "Transform a file from Kestra with a Ruby script using the GraalVM scripting engine."
 )
 @Plugin(
     examples = {
