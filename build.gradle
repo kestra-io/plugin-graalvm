@@ -164,8 +164,8 @@ jar {
     manifest {
         attributes(
             "X-Kestra-Name": project.name,
-            "X-Kestra-Title": "Google Cloud",
-            "X-Kestra-Group": project.group + ".gcp",
+            "X-Kestra-Title": "GraalVM",
+            "X-Kestra-Group": project.group + ".graalvm",
             "X-Kestra-Description": project.description,
             "X-Kestra-Version": project.version
         )
