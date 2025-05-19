@@ -24,32 +24,29 @@ abstract class AbstractScript extends Task {
     @NotNull
     protected Property<String> script;
 
-    @Getter(AccessLevel.NONE)
-    private volatile transient Engine engine;
-
     protected Context buildContext(RunContext runContext) {
         return contextBuilder(runContext)
-                .engine(getEngine())
-                // allow I/O
-                .allowIO(IOAccess.ALL)
-                // allow host access with a curated default
-                .allowHostAccess(HostAccess
-                        .newBuilder(HostAccess.EXPLICIT)
-                        .allowArrayAccess(true).allowListAccess(true).allowBufferAccess(true).allowIterableAccess(true).allowIteratorAccess(true).allowMapAccess(true).allowPublicAccess(true)
-                        .build()
-                )
-                // allow loading class
-                .allowHostClassLoading(true)
-                // restrict loading class to java.* and io.kestra.core.models.*
-                .allowHostClassLookup(name -> name.startsWith("java.") || name.startsWith("io.kestra.core.models"))
-                // log to the run context logger
-                .logHandler(new SLF4JJULHandler(runContext.logger()))
-                // needed for Ruby
-                .allowPolyglotAccess(PolyglotAccess.ALL)
-                // needed for Ruby
-                .allowCreateThread(true)
-                .currentWorkingDirectory(runContext.workingDir().path())
-                .build();
+            .engine(getEngine())
+            // allow I/O
+            .allowIO(IOAccess.ALL)
+            // allow host access with a curated default
+            .allowHostAccess(HostAccess
+                    .newBuilder(HostAccess.EXPLICIT)
+                    .allowArrayAccess(true).allowListAccess(true).allowBufferAccess(true).allowIterableAccess(true).allowIteratorAccess(true).allowMapAccess(true).allowPublicAccess(true)
+                    .build()
+            )
+            // allow loading class
+            .allowHostClassLoading(true)
+            // restrict loading class to java.* and io.kestra.core.models.*
+            .allowHostClassLookup(name -> name.startsWith("java.") || name.startsWith("io.kestra.core.models"))
+            // log to the run context logger
+            .logHandler(new SLF4JJULHandler(runContext.logger()))
+            // needed for Ruby
+            .allowPolyglotAccess(PolyglotAccess.ALL)
+            // needed for Ruby
+            .allowCreateThread(true)
+            .currentWorkingDirectory(runContext.workingDir().path())
+            .build();
     }
 
     protected Value getBindings(Context context, String languageId) {
@@ -60,18 +57,13 @@ abstract class AbstractScript extends Task {
         return Context.newBuilder();
     }
 
+    // initialization-on-demand holder idiom
+    private static class EngineHolder {
+        static final Engine INSTANCE = Engine.create();
+    }
+
     private Engine getEngine() {
-        // double-checked locking idiom
-        Engine engine = this.engine;
-        if (engine == null) {
-            synchronized (this) {
-                engine = this.engine;
-                if (engine == null) {
-                    engine = this.engine = Engine.create();
-                }
-            }
-        }
-        return engine;
+        return EngineHolder.INSTANCE;
     }
 
     protected Source generateSource(String languageId, RunContext runContext) throws IllegalVariableEvaluationException {
