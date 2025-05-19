@@ -9,6 +9,8 @@ import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +27,15 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
     protected Property<List<String>> outputs;
 
     protected Output run(RunContext runContext, String languageId) throws Exception {
-        try (Context context = buildContext(runContext)) {
+        Thread stdOut = null;
+        Thread stdErr = null;
+
+        try (var outStream = new PipedOutputStream();
+             var inStream = new PipedInputStream(outStream);
+             var errStream = new PipedOutputStream();
+             var inErrStream = new PipedInputStream(errStream);
+             var context = buildContext(runContext, outStream, errStream)) {
+
             var bindings = getBindings(context, languageId);
             // add all common vars to bindings in case of concurrency
             runContext.getVariables().forEach((key, value) -> bindings.putMember(key, value));
@@ -34,6 +44,12 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
 
             var source = generateSource(languageId, runContext);
             var result = context.eval(source);
+
+            // watch for logs from output streams in separated threads
+            LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
+            LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
+            stdOut = Thread.ofVirtual().name("graalvm-log-out").start(stdOutRunnable);
+            stdErr = Thread.ofVirtual().name("graalvm-log-err").start(stdErrRunnable);
 
             var renderedOutputs = runContext.render(this.outputs).asList(String.class);
             Output.OutputBuilder builder = Output.builder();
@@ -51,6 +67,13 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
             }
 
             return builder.build();
+        } finally  {
+            if (stdOut != null) {
+                stdOut.join();
+            }
+            if (stdErr != null) {
+                stdErr.join();
+            }
         }
     }
 

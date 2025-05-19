@@ -12,6 +12,8 @@ import org.graalvm.polyglot.*;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 
+import java.io.OutputStream;
+
 @SuperBuilder
 @ToString
 @EqualsAndHashCode
@@ -24,7 +26,7 @@ abstract class AbstractScript extends Task {
     @NotNull
     protected Property<String> script;
 
-    protected Context buildContext(RunContext runContext) {
+    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) {
         return contextBuilder(runContext)
             .engine(getEngine())
             // allow I/O
@@ -46,6 +48,8 @@ abstract class AbstractScript extends Task {
             // needed for Ruby
             .allowCreateThread(true)
             .currentWorkingDirectory(runContext.workingDir().path())
+            .out(out)
+            .err(err)
             .build();
     }
 
