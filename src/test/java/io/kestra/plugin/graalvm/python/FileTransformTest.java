@@ -4,6 +4,7 @@ import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.storages.StorageInterface;
+import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ public class FileTransformTest {
     void run() throws Exception {
         try (InputStream is = FileTransformTest.class.getClassLoader().getResourceAsStream("wikipedia_page_view.ion")) {
             var uri = storageInterface.put(
-                null,
+                TenantService.MAIN_TENANT,
                 null,
                 new URI("/" + IdUtils.create()),
                 is
@@ -53,7 +54,7 @@ public class FileTransformTest {
             var output = fileTransform.run(runContext);
             assertThat(output, notNullValue());
             assertThat(output.getUri(), notNullValue());
-            try (InputStream resultIs = storageInterface.get(null, null, output.getUri())) {
+            try (InputStream resultIs = storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri())) {
                 String results = new String(resultIs.readAllBytes());
                 assertThat(results, is("""
                     {date:"2025-03-19",title:"Sunita_Williams",views:5969,time:"12:00:00Z"}
