@@ -25,7 +25,7 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                 var BigDecimal = Java.type('java.math.BigDecimal');
                 BigDecimal.valueOf(10).pow(20)"""
@@ -43,10 +43,10 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(Property.of(
+            .script(Property.ofValue(
                 "({ id   : 42, text : '42', arr  : [1,42,3] })"
             ))
-            .outputs(Property.of(List.of("id", "text")))
+            .outputs(Property.ofValue(List.of("id", "text")))
             .build();
 
         var runOutput = task.run(runContext);
@@ -65,7 +65,7 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                     (function() {
                     var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
@@ -83,7 +83,7 @@ class EvalTest {
                     return {"map": map, "out": out};
                     })"""
             ))
-            .outputs(Property.of(List.of("map", "out")))
+            .outputs(Property.ofValue(List.of("map", "out")))
             .build();
 
         var runOutput = task.run(runContext);

@@ -38,8 +38,8 @@ public class FileTransformTest {
 
             var fileTransform = FileTransform.builder()
                 .id("fileTransform")
-                .from(Property.of(uri.toString()))
-                .script(Property.of("""
+                .from(Property.ofValue(uri.toString()))
+                .script(Property.ofValue("""
                       if (row['title'] === 'Main_Page' || row['title'] === 'Special:Search' || row['title'] === '-') {
                         // remove un-needed row
                         row = null
