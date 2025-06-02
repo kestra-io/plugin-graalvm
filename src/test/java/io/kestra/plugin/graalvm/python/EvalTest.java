@@ -26,7 +26,7 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                 import java.math.BigDecimal as BigDecimal
                 BigDecimal.valueOf(10).pow(20)"""
@@ -46,7 +46,7 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                     import java
                     import java.io.File as File
@@ -62,7 +62,7 @@ class EvalTest {
                     out = runContext.storage().putFile(tempFile)
                     """
             ))
-            .outputs(Property.of(List.of("map", "out")))
+            .outputs(Property.ofValue(List.of("map", "out")))
             .build();
 
         var runOutput = task.run(runContext);
@@ -81,13 +81,13 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .modules(Property.of(
+            .modules(Property.ofValue(
                 Map.of("hello.py", """
                     def hello(name):
                       print("Hello " + name)
                     """)
             ))
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                     import hello
                     hello.hello("Loïc")
