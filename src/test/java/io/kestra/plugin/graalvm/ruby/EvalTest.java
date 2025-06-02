@@ -27,7 +27,7 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.of(
+            .script(Property.ofValue(
                 """
                       Counter = Java.type('io.kestra.core.models.executions.metrics.Counter')
                       FileOutputStream = Java.type('java.io.FileOutputStream')
@@ -44,7 +44,7 @@ class EvalTest {
                       return {map: map, out: out}
                     """
             ))
-            .outputs(Property.of(List.of("map", "out")))
+            .outputs(Property.ofValue(List.of("map", "out")))
             .build();
 
         var runOutput = task.run(runContext);
