@@ -47,8 +47,7 @@ import lombok.experimental.SuperBuilder;
                       # add a 'totalItems' column
                       row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
         )
-    },
-    beta = true
+    }
 )
 public class FileTransform extends AbstractFileTransform {
     @Override

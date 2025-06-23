@@ -100,8 +100,7 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
                           import hello
                           logger.info(hello.hello("Kestra"))"""
         )
-    },
-    beta = true
+    }
 )
 public class Eval extends AbstractEval {
     private static final Path MODULE_PATH = Path.of("__kestra_python");

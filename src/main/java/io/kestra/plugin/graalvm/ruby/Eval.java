@@ -51,8 +51,7 @@ import org.graalvm.polyglot.Value;
                           out = runContext.storage().putFile(tempFile)
                           return {map: map, out: out}"""
         )
-    },
-    beta = true
+    }
 )
 public class Eval extends AbstractEval {
     @Override
