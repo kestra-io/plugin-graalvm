@@ -49,8 +49,7 @@ import lombok.experimental.SuperBuilder;
                         return {"map": map, "out": out};
                       })"""
         )
-    },
-    beta = true
+    }
 )
 public class Eval extends AbstractEval {
     @Override

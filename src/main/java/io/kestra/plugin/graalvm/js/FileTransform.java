@@ -49,8 +49,7 @@ import lombok.experimental.SuperBuilder;
                   }
             """
         )
-    },
-    beta = true
+    }
 )
 public class FileTransform extends AbstractFileTransform {
     @Override

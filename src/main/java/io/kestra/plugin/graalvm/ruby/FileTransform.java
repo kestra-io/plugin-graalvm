@@ -51,8 +51,7 @@ import org.graalvm.polyglot.Value;
                         row[:totalItems] = row[:totalProducts] * row[:totalQuantity]
                       end"""
         )
-    },
-    beta = true
+    }
 )
 public class FileTransform extends AbstractFileTransform {
     @Override

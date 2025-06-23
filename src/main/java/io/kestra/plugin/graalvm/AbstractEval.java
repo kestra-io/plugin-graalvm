@@ -6,7 +6,6 @@ import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
 import java.io.PipedInputStream;
