@@ -3,6 +3,7 @@ package io.kestra.plugin.graalvm;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.executions.AbstractMetricEntry;
 import io.kestra.core.models.property.Property;
+import io.kestra.core.runners.LocalPath;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextProperty;
 import io.kestra.core.runners.WorkerTaskResult;
@@ -204,6 +205,11 @@ public class RunContextProxy extends RunContext {
     @Override
     public KVStore namespaceKv(String namespace) {
         return delegate.namespaceKv(namespace);
+    }
+
+    @Override
+    public LocalPath localPath() {
+        return delegate.localPath();
     }
 
     @Override
