@@ -193,6 +193,9 @@ shadowJar {
     zip64 true
     archiveClassifier.set(null)
     mergeServiceFiles()
+    dependencies {
+        exclude "*.pom"
+    }
 }
 
 
