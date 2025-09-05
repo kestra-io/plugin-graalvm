@@ -51,10 +51,12 @@ dependencies {
 
     // GraalVM
     api "org.graalvm.polyglot:polyglot:$graalVMVersion"
-    api "org.graalvm.polyglot:js-community:$graalVMVersion"
-    api "org.graalvm.polyglot:python-community:$graalVMVersion"
+    api "org.graalvm.js:js-language:$graalVMVersion"
+    api "org.graalvm.python:python-language:$graalVMVersion"
+    api "org.graalvm.python:python-resources:$graalVMVersion"
     api "org.graalvm.python:python-embedding:$graalVMVersion"
-    api "org.graalvm.polyglot:ruby-community:$graalVMVersion"
+    api "org.graalvm.ruby:ruby-language:$graalVMVersion"
+    api "org.graalvm.ruby:ruby-resources:$graalVMVersion"
 
     // slf4j JUL bridge
     api "org.slf4j:jul-to-slf4j"
@@ -192,9 +194,6 @@ shadowJar {
     zip64 true
     archiveClassifier.set(null)
     mergeServiceFiles()
-    dependencies {
-        exclude "*.pom"
-    }
 }
 
 
