@@ -37,7 +37,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
 
             var bindings = getBindings(context, languageId);
             // add all common vars to bindings in case of concurrency
-            runContext.getVariables().forEach((key, value) -> bindings.putMember(key, value));
+            runContext.getVariables().forEach(bindings::putMember);
             bindings.putMember("runContext", new RunContextProxy(runContext));
             bindings.putMember("logger", runContext.logger());
 
@@ -76,6 +76,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         }
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> gatherOutputs(List<String> renderedOutputs, Value value) {
         Map<String, Object> outputs = new HashMap<>();
 
