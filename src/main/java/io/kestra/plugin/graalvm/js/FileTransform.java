@@ -1,7 +1,9 @@
 package io.kestra.plugin.graalvm.js;
 
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractFileTransform;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,6 +51,14 @@ import lombok.experimental.SuperBuilder;
                   }
             """
         )
+    },
+    metrics = {
+       @Metric(
+           name = "records",
+           type = Counter.TYPE,
+           unit = "count",
+           description = "Number of records or entities processed by the JavaScript script. This includes both modified and filtered rows from the input file."
+       )
     }
 )
 public class FileTransform extends AbstractFileTransform {
