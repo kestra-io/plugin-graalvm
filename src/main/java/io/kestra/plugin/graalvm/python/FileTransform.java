@@ -1,7 +1,9 @@
 package io.kestra.plugin.graalvm.python;
 
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractFileTransform;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -47,6 +49,14 @@ import lombok.experimental.SuperBuilder;
                       # add a 'totalItems' column
                       row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
         )
+    },
+    metrics = {
+      @Metric(
+          name = "records",
+          type = Counter.TYPE,
+          unit = "count",
+          description = "Number of records or entities processed by the Python script. This includes both modified and filtered rows from the input file."
+      )
     }
 )
 public class FileTransform extends AbstractFileTransform {

@@ -1,7 +1,9 @@
 package io.kestra.plugin.graalvm.ruby;
 
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractEval;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -51,6 +53,14 @@ import org.graalvm.polyglot.Value;
                           out = runContext.storage().putFile(tempFile)
                           return {map: map, out: out}"""
         )
+    },
+    metrics = {
+        @Metric(
+          name = "records",
+          type = Counter.TYPE,
+          unit = "count",
+          description = "Tracks a user defined numeric value emitted from the Ruby script, such as the number of processed records or computed results."
+      )
     }
 )
 public class Eval extends AbstractEval {
