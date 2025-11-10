@@ -200,7 +200,11 @@ jar {
 shadowJar {
     zip64 true
     archiveClassifier.set(null)
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
+    exclude("META-INF/*.SF")
+    exclude("META-INF/*.DSA")
+    exclude("META-INF/*.RSA")
 }
 
 
