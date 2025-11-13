@@ -1,0 +1,8 @@
+group: io.kestra.plugin.graalvm
+name: "graalvm"
+title: "GraalVM"
+description: "Use GraalVM scripting engine with Kestra data workflows."
+body: ""
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"
