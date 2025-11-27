@@ -1,0 +1,8 @@
+group: io.kestra.plugin.graalvm.ruby
+name: "ruby"
+title: "Ruby"
+description: "This subgroup of plugins contains tasks for evaluating JavaScript Ruby in-process using GraalVM."
+body: ""
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"
