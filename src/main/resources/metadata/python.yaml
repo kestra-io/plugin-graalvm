@@ -1,0 +1,8 @@
+group: io.kestra.plugin.graalvm.python
+name: "python"
+title: "Python"
+description: "This subgroup of plugins contains tasks for evaluating Python scripts in-process using GraalVM."
+body: ""
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"
