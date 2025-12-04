@@ -1,8 +1,8 @@
 group: io.kestra.plugin.graalvm.js
 name: "js"
 title: "JS"
-description: "This subgroup of plugins contains tasks for evaluating JavaScript scripts in-process using GraalVM."
-body: ""
+description: "Tasks that execute JavaScript with GraalVM."
+body: "Pass inline JS or script files with optional bindings and parameters to run inside the GraalVM engine, returning transformed content or computed results for workflows."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"

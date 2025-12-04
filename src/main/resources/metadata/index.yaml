@@ -1,8 +1,8 @@
 group: io.kestra.plugin.graalvm
 name: "graalvm"
 title: "GraalVM"
-description: "Use GraalVM scripting engine with Kestra data workflows."
-body: ""
+description: "Tasks that run JS, Python, or Ruby code via the GraalVM engine."
+body: "Provide inline scripts or file paths with language selection, optional bindings/variables, and output handling to execute GraalVM code inside workflows while capturing logs and results."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"
