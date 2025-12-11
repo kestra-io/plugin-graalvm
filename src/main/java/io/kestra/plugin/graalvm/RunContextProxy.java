@@ -1,13 +1,10 @@
 package io.kestra.plugin.graalvm;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.Plugin;
 import io.kestra.core.models.executions.AbstractMetricEntry;
 import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.LocalPath;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextProperty;
-import io.kestra.core.runners.WorkerTaskResult;
-import io.kestra.core.runners.WorkingDir;
+import io.kestra.core.runners.*;
 import io.kestra.core.storages.Storage;
 import io.kestra.core.storages.kv.KVStore;
 import org.slf4j.Logger;
@@ -183,18 +180,23 @@ public class RunContextProxy extends RunContext {
     }
 
     @Override
+    public TaskRunInfo taskRunInfo() {
+        return delegate.taskRunInfo();
+    }
+
+    @Override
     public FlowInfo flowInfo() {
         return delegate.flowInfo();
     }
 
     @Override
     public <T> Optional<T> pluginConfiguration(String name) {
-        return delegate.pluginConfiguration(name);
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public Map<String, Object> pluginConfigurations() {
-        return delegate.pluginConfigurations();
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -215,5 +217,25 @@ public class RunContextProxy extends RunContext {
     @Override
     public boolean isInitialized() {
         return delegate.isInitialized();
+    }
+
+    @Override
+    public AclChecker acl() {
+        return delegate.acl();
+    }
+
+    @Override
+    public AssetEmitter assets() throws IllegalVariableEvaluationException {
+        return delegate.assets();
+    }
+
+    @Override
+    public RunContext cloneForPlugin(Plugin plugin) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public InputAndOutput inputAndOutput() {
+        return delegate.inputAndOutput();
     }
 }
