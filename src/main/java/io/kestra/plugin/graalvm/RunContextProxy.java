@@ -1,13 +1,10 @@
 package io.kestra.plugin.graalvm;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.Plugin;
 import io.kestra.core.models.executions.AbstractMetricEntry;
 import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.LocalPath;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextProperty;
-import io.kestra.core.runners.WorkerTaskResult;
-import io.kestra.core.runners.WorkingDir;
+import io.kestra.core.runners.*;
 import io.kestra.core.storages.Storage;
 import io.kestra.core.storages.kv.KVStore;
 import org.slf4j.Logger;
@@ -215,5 +212,15 @@ public class RunContextProxy extends RunContext {
     @Override
     public boolean isInitialized() {
         return delegate.isInitialized();
+    }
+
+    @Override
+    public AclChecker acl() {
+        return delegate.acl();
+    }
+
+    @Override
+    public RunContext cloneForPlugin(Plugin plugin) {
+        throw new UnsupportedOperationException();
     }
 }
