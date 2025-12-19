@@ -1,0 +1,8 @@
+group: io.kestra.plugin.graalvm.python
+name: "python"
+title: "Python"
+description: "Tasks that execute Python with GraalVM."
+body: "Provide inline Python code or script files and optional bindings/parameters to run inside GraalVM, emitting transformed outputs or data back into Kestra flows without an external interpreter."
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"
