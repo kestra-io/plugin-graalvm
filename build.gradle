@@ -54,16 +54,16 @@ dependencies {
     compileOnly group: "io.kestra", name: "script", version: kestraVersion
 
     // GraalVM
-    api "org.graalvm.polyglot:polyglot:$graalVMVersion"
-    api "org.graalvm.js:js-language:$graalVMVersion"
-    api "org.graalvm.python:python-language:$graalVMVersion"
-    api "org.graalvm.python:python-resources:$graalVMVersion"
-    api "org.graalvm.python:python-embedding:$graalVMVersion"
-    api "org.graalvm.ruby:ruby-language:$graalVMVersion"
-    api "org.graalvm.ruby:ruby-resources:$graalVMVersion"
+    implementation "org.graalvm.polyglot:polyglot:$graalVMVersion"
+    implementation "org.graalvm.js:js-language:$graalVMVersion"
+    implementation "org.graalvm.python:python-language:$graalVMVersion"
+    implementation "org.graalvm.python:python-resources:$graalVMVersion"
+    implementation "org.graalvm.python:python-embedding:$graalVMVersion"
+    implementation "org.graalvm.ruby:ruby-language:$graalVMVersion"
+    implementation "org.graalvm.ruby:ruby-resources:$graalVMVersion"
 
     // slf4j JUL bridge
-    api "org.slf4j:jul-to-slf4j"
+    implementation "org.slf4j:jul-to-slf4j"
 }
 
 
@@ -131,7 +131,7 @@ dependencies {
 }
 
 test {
-    jvmArgs = [ "-javaagent:${configurations.agent.singleFile}" ]
+    jvmArgs = ["-javaagent:${configurations.agent.singleFile}"]
 }
 
 /**********************************************************************************************************************\
@@ -180,7 +180,7 @@ mavenPublishing {
 }
 
 tasks.withType(GenerateModuleMetadata).configureEach {
-    // Suppression this validation error as we want to enforce the Kestra platform
+    // Suppress this validation error as we want to enforce the Kestra platform
     suppressedValidationErrors.add('enforced-platform')
 }
 
@@ -196,7 +196,6 @@ jar {
     }
 }
 
-
 shadowJar {
     zip64 true
     archiveClassifier.set(null)
@@ -205,8 +204,12 @@ shadowJar {
     exclude("META-INF/*.SF")
     exclude("META-INF/*.DSA")
     exclude("META-INF/*.RSA")
-}
 
+    dependencies {
+        exclude(dependency("org.graalvm.python:python-resources:.*"))
+        exclude(dependency("org.graalvm.ruby:ruby-resources:.*"))
+    }
+}
 
 /**********************************************************************************************************************\
  * Version
