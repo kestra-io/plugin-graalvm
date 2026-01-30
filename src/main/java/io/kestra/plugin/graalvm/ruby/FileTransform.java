@@ -21,7 +21,8 @@ import org.graalvm.polyglot.Value;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Transform a file from Kestra with a Ruby script using the GraalVM scripting engine."
+    title = "Transform rows with Ruby on GraalVM",
+    description = "Reads rows from `from` (kestra:// internal storage or inline JSON), lets Ruby mutate `row` via `Polyglot.import` and optionally drop it, then writes an ION file. Use `concurrent` to parallelize (order not preserved); output URI points to the temporary transformed file."
 )
 @Plugin(
     examples = {

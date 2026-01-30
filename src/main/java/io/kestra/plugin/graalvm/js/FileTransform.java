@@ -19,7 +19,8 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Transform a file from Kestra with a JavaScript script using the GraalVM scripting engine."
+    title = "Transform rows with JavaScript on GraalVM",
+    description = "Reads rows from `from` (kestra:// internal storage or inline JSON), lets JavaScript mutate `row` and optionally drop it, then writes an ION file. Set `concurrent` for parallel processing (order not preserved); output URI points to the temporary transformed file."
 )
 @Plugin(
     examples = {
