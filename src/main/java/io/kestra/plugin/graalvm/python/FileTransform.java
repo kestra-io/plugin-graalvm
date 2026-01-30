@@ -19,7 +19,8 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Transform a file from Kestra with a Python script using the GraalVM scripting engine."
+    title = "Transform rows with Python on GraalVM",
+    description = "Reads rows from `from` (kestra:// internal storage or inline JSON), lets Python mutate `row` and optionally drop it, then writes an ION file. Set `concurrent` to parallelize (order not preserved); output URI points to the temporary transformed file."
 )
 @Plugin(
     examples = {

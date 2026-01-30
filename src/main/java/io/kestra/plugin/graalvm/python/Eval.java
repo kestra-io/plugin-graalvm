@@ -31,7 +31,8 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a Python script using the GraalVM scripting engine."
+    title = "Run Python inline on GraalVM",
+    description = "Executes inline Python inside the task JVM using GraalVM. Exposes `runContext`, `logger`, and rendered variables to the script; capture specific members via the `outputs` property. Optional `modules` let you ship extra Python files from content or `kestra://` URIs into the module path."
 )
 @Plugin(
     examples = {
@@ -116,8 +117,8 @@ public class Eval extends AbstractEval {
     private static final Path MODULE_PATH = Path.of("__kestra_python");
 
     @Schema(
-        title = "Python modules to add into the Python module path.",
-        description = "The key is the name of the module file, the value is the content of the module file an internal storage URI"
+        title = "Inline Python modules to preload.",
+        description = "Map of filename to module content or a `kestra://` URI; files are written to a temporary module path before execution."
     )
     private Property<Map<String, String>> modules;
 
