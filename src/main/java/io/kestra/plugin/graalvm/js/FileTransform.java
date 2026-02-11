@@ -20,7 +20,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Transform rows with JavaScript on GraalVM",
-    description = "Reads rows from `from` (kestra:// internal storage or inline JSON), lets JavaScript mutate `row` and optionally drop it, then writes an ION file. Set `concurrent` for parallel processing (order not preserved); output URI points to the temporary transformed file."
+    description = "Streams rows from `from` (kestra:// URI, map, or list), lets JavaScript mutate `row`, and writes the result as an ION file. Set `concurrent` for parallel processing (order not preserved). Set `row = null` to drop a record; set `rows` array to emit multiple rows."
 )
 @Plugin(
     examples = {

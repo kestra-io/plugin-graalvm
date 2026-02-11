@@ -21,8 +21,8 @@ import org.graalvm.polyglot.Value;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Run Ruby inline on GraalVM",
-    description = "Executes inline Ruby inside the task JVM using GraalVM. Access `runContext`, `logger`, and other bindings through `Polyglot.import`; capture members via the `outputs` property to return them as task outputs."
+    title = "Execute inline Ruby with GraalVM",
+    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them. Allows file I/O and host class access restricted to `java.*` and `io.kestra.core.models.*`."
 )
 @Plugin(
     examples = {
