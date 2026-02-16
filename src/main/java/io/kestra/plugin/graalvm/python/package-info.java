@@ -1,6 +1,7 @@
 @PluginSubGroup(
-        description = "This subgroup of plugins contains tasks for evaluating Python scripts in-process using GraalVM.",
-                categories = { PluginSubGroup.PluginCategory.DATA, PluginSubGroup.PluginCategory.INFRASTRUCTURE }
+        title = "Python tasks on GraalVM",
+        description = "Tasks that run Python in-process on GraalVM for inline evaluation and file transformations.",
+        categories = { PluginSubGroup.PluginCategory.DATA, PluginSubGroup.PluginCategory.INFRASTRUCTURE }
 )
 package io.kestra.plugin.graalvm.python;
 

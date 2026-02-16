@@ -19,7 +19,8 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute a JavaScript script using the GraalVM scripting engine."
+    title = "Execute inline JavaScript with GraalVM",
+    description = "Runs inline JavaScript inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them."
 )
 @Plugin(
     examples = {

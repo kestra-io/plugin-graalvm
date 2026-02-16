@@ -1,7 +1,7 @@
 @PluginSubGroup(
-        title = "JS",
-        description = "This subgroup of plugins contains tasks for evaluating JavaScript scripts in-process using GraalVM.",
-                categories = { PluginSubGroup.PluginCategory.DATA, PluginSubGroup.PluginCategory.INFRASTRUCTURE }
+        title = "JavaScript tasks on GraalVM",
+        description = "Tasks that run JavaScript in-process on GraalVM, including inline evaluation and file transformations.",
+        categories = { PluginSubGroup.PluginCategory.DATA, PluginSubGroup.PluginCategory.INFRASTRUCTURE }
 )
 package io.kestra.plugin.graalvm.js;
 

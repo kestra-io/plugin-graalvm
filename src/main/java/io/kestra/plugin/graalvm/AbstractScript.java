@@ -21,7 +21,8 @@ import java.io.OutputStream;
 @NoArgsConstructor
 abstract class AbstractScript extends Task {
     @Schema(
-        title = "The script to evaluate"
+        title = "Script body to execute",
+        description = "Template-rendered source code run by GraalVM in the selected language; flow variables are resolved before execution"
     )
     @NotNull
     protected Property<String> script;
