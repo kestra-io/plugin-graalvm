@@ -3,6 +3,9 @@ package io.kestra.plugin.graalvm.js;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.enums.MonacoLanguages;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractEval;
@@ -63,6 +66,10 @@ import lombok.experimental.SuperBuilder;
     }
 )
 public class Eval extends AbstractEval {
+
+    @PluginProperty(language = MonacoLanguages.JAVASCRIPT)
+    protected Property<String> script;
+    
     @Override
     public Output run(RunContext runContext) throws Exception {
         return this.run(runContext, "js");

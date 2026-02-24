@@ -4,6 +4,7 @@ import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.enums.MonacoLanguages;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -121,6 +122,9 @@ public class Eval extends AbstractEval {
         description = "Map of filename to module content or a `kestra://` URI; files are written to a temporary module path before execution."
     )
     private Property<Map<String, String>> modules;
+
+    @PluginProperty(language = MonacoLanguages.PYTHON)
+    protected Property<String> script;
 
 
     @Override
