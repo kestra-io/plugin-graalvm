@@ -6,6 +6,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractFileTransform;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -27,37 +28,37 @@ import lombok.experimental.SuperBuilder;
         @Example(
             full = true,
             code = """
-              id: transformPython
-              namespace: company.team
+                id: transformPython
+                namespace: company.team
 
-              tasks:
-                - id: download
-                  type: io.kestra.plugin.core.http.Download
-                  uri: https://dummyjson.com/carts/1
-                - id: jsonToIon
-                  type: io.kestra.plugin.serdes.json.JsonToIon
-                  from: "{{outputs.download.uri}}"
-                - id: transformPython
-                  type: io.kestra.plugin.graalvm.python.FileTransform
-                  from: "{{ outputs.jsonToIon.uri }}"
-                  script: |
-                    if row['id'] == 666:
-                      # remove un-needed row
-                      row = None
-                    else:
-                      # remove the 'products' column
-                      row['products'] = None
-                      # add a 'totalItems' column
-                      row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
+                tasks:
+                  - id: download
+                    type: io.kestra.plugin.core.http.Download
+                    uri: https://dummyjson.com/carts/1
+                  - id: jsonToIon
+                    type: io.kestra.plugin.serdes.json.JsonToIon
+                    from: "{{outputs.download.uri}}"
+                  - id: transformPython
+                    type: io.kestra.plugin.graalvm.python.FileTransform
+                    from: "{{ outputs.jsonToIon.uri }}"
+                    script: |
+                      if row['id'] == 666:
+                        # remove un-needed row
+                        row = None
+                      else:
+                        # remove the 'products' column
+                        row['products'] = None
+                        # add a 'totalItems' column
+                        row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
         )
     },
     metrics = {
-      @Metric(
-          name = "records",
-          type = Counter.TYPE,
-          unit = "count",
-          description = "Number of records or entities processed by the Python script. This includes both modified and filtered rows from the input file."
-      )
+        @Metric(
+            name = "records",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of records or entities processed by the Python script. This includes both modified and filtered rows from the input file."
+        )
     }
 )
 public class FileTransform extends AbstractFileTransform {

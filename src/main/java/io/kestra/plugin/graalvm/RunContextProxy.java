@@ -1,14 +1,5 @@
 package io.kestra.plugin.graalvm;
 
-import io.kestra.core.exceptions.IllegalVariableEvaluationException;
-import io.kestra.core.models.Plugin;
-import io.kestra.core.models.executions.AbstractMetricEntry;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.*;
-import io.kestra.core.storages.Storage;
-import io.kestra.core.storages.kv.KVStore;
-import org.slf4j.Logger;
-
 import java.net.URI;
 import java.security.GeneralSecurityException;
 import java.util.List;
@@ -16,13 +7,22 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.slf4j.Logger;
+
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.Plugin;
+import io.kestra.core.models.executions.AbstractMetricEntry;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.runners.*;
+import io.kestra.core.storages.Storage;
+import io.kestra.core.storages.kv.KVStore;
+
 public class RunContextProxy extends RunContext {
     private final RunContext delegate;
 
     public RunContextProxy(RunContext delegate) {
         this.delegate = delegate;
     }
-
 
     @Override
     public String getTriggerExecutionId() {

@@ -1,9 +1,9 @@
 package io.kestra.plugin.graalvm;
 
+import java.util.logging.LogRecord;
+
 import org.slf4j.Logger;
 import org.slf4j.bridge.SLF4JBridgeHandler;
-
-import java.util.logging.LogRecord;
 
 class SLF4JJULHandler extends SLF4JBridgeHandler {
     private final Logger logger;

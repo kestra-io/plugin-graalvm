@@ -1,18 +1,20 @@
 package io.kestra.plugin.graalvm;
 
-import io.kestra.core.exceptions.IllegalVariableEvaluationException;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.models.tasks.Task;
-import io.kestra.core.runners.RunContext;
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
-import lombok.experimental.SuperBuilder;
+import java.io.OutputStream;
+
 import org.graalvm.polyglot.*;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 
-import java.io.OutputStream;
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.Task;
+import io.kestra.core.runners.RunContext;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 @SuperBuilder
 @ToString
@@ -33,7 +35,8 @@ abstract class AbstractScript extends Task {
             // allow I/O
             .allowIO(IOAccess.ALL)
             // allow host access with a curated default
-            .allowHostAccess(HostAccess
+            .allowHostAccess(
+                HostAccess
                     .newBuilder(HostAccess.EXPLICIT)
                     .allowArrayAccess(true).allowListAccess(true).allowBufferAccess(true).allowIterableAccess(true).allowIteratorAccess(true).allowMapAccess(true).allowPublicAccess(true)
                     .build()
