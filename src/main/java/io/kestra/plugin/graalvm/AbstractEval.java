@@ -1,18 +1,20 @@
 package io.kestra.plugin.graalvm;
 
-import io.kestra.core.models.property.Property;
-import io.kestra.core.models.tasks.RunnableTask;
-import io.kestra.core.runners.RunContext;
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
-import lombok.experimental.SuperBuilder;
-import org.graalvm.polyglot.Value;
-
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.graalvm.polyglot.Value;
+
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.runners.RunContext;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 @SuperBuilder
 @ToString
@@ -30,11 +32,13 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         Thread stdOut = null;
         Thread stdErr = null;
 
-        try (var outStream = new PipedOutputStream();
-             var inStream = new PipedInputStream(outStream);
-             var errStream = new PipedOutputStream();
-             var inErrStream = new PipedInputStream(errStream);
-             var context = buildContext(runContext, outStream, errStream)) {
+        try (
+            var outStream = new PipedOutputStream();
+            var inStream = new PipedInputStream(outStream);
+            var errStream = new PipedOutputStream();
+            var inErrStream = new PipedInputStream(errStream);
+            var context = buildContext(runContext, outStream, errStream)
+        ) {
 
             var bindings = getBindings(context, languageId);
             // add all common vars to bindings in case of concurrency
@@ -58,16 +62,14 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
                 if (results.hasMembers() && !renderedOutputs.isEmpty()) {
                     builder.outputs(gatherOutputs(renderedOutputs, results));
                 }
-            }
-            else if (result.isHostObject()){
+            } else if (result.isHostObject()) {
                 builder.result(result.asHostObject());
-            }
-            else if (result.hasMembers() && !renderedOutputs.isEmpty()) {
+            } else if (result.hasMembers() && !renderedOutputs.isEmpty()) {
                 builder.outputs(gatherOutputs(renderedOutputs, result));
             }
 
             return builder.build();
-        } finally  {
+        } finally {
             if (stdOut != null) {
                 stdOut.join();
             }
@@ -129,7 +131,8 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         if (member.hasMembers()) {
             // try to read members into a map
             Map<String, Object> values = new HashMap<>();
-            member.getMemberKeys().forEach(key -> {
+            member.getMemberKeys().forEach(key ->
+            {
                 values.put(key, as(member.getMember(key)));
             });
             return values;

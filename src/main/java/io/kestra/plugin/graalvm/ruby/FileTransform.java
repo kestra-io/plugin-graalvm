@@ -1,19 +1,21 @@
 package io.kestra.plugin.graalvm.ruby;
 
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Value;
+
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractFileTransform;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Value;
 
 @SuperBuilder
 @ToString
@@ -56,12 +58,12 @@ import org.graalvm.polyglot.Value;
         )
     },
     metrics = {
-      @Metric(
-          name = "records",
-          type = Counter.TYPE,
-          unit = "count",
-          description = "Number of records or entities processed by the Ruby script. This includes both modified and filtered rows from the input file."
-      )
+        @Metric(
+            name = "records",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of records or entities processed by the Ruby script. This includes both modified and filtered rows from the input file."
+        )
     }
 )
 public class FileTransform extends AbstractFileTransform {

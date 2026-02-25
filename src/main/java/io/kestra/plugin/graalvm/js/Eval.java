@@ -6,6 +6,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.runners.RunContext;
 import io.kestra.plugin.graalvm.AbstractEval;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -54,12 +55,12 @@ import lombok.experimental.SuperBuilder;
         )
     },
     metrics = {
-      @Metric(
-         name = "records",
-         type = Counter.TYPE,
-         unit = "count",
-         description = "Tracks a user defined numeric value emitted from the JavaScript script, such as the number of processed records or computed results."
-      )
+        @Metric(
+            name = "records",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Tracks a user defined numeric value emitted from the JavaScript script, such as the number of processed records or computed results."
+        )
     }
 )
 public class Eval extends AbstractEval {

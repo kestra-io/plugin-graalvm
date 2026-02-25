@@ -1,16 +1,18 @@
 package io.kestra.plugin.graalvm.js;
 
-import io.kestra.core.junit.annotations.KestraTest;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextFactory;
-import jakarta.inject.Inject;
-import org.junit.jupiter.api.Test;
-
 import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.runners.RunContext;
+import io.kestra.core.runners.RunContextFactory;
+
+import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -25,11 +27,13 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(Property.ofValue(
-                """
-                var BigDecimal = Java.type('java.math.BigDecimal');
-                BigDecimal.valueOf(10).pow(20)"""
-            ))
+            .script(
+                Property.ofValue(
+                    """
+                        var BigDecimal = Java.type('java.math.BigDecimal');
+                        BigDecimal.valueOf(10).pow(20)"""
+                )
+            )
             .build();
 
         var runOutput = task.run(runContext);
@@ -43,9 +47,11 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
-            .script(Property.ofValue(
-                "({ id   : 42, text : '42', arr  : [1,42,3] })"
-            ))
+            .script(
+                Property.ofValue(
+                    "({ id   : 42, text : '42', arr  : [1,42,3] })"
+                )
+            )
             .outputs(Property.ofValue(List.of("id", "text")))
             .build();
 
@@ -65,24 +71,26 @@ class EvalTest {
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.ofValue(
-                """
-                    (function() {
-                    var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
-                    var File = Java.type('java.io.File');
-                    var FileOutputStream = Java.type('java.io.FileOutputStream');
+            .script(
+                Property.ofValue(
+                    """
+                        (function() {
+                        var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
+                        var File = Java.type('java.io.File');
+                        var FileOutputStream = Java.type('java.io.FileOutputStream');
 
-                    runContext.metric(Counter.of('total', 666, 'name', 'bla'));
+                        runContext.metric(Counter.of('total', 666, 'name', 'bla'));
 
-                    map = {'test': 'here'};
-                    var tempFile = runContext.workingDir().createTempFile().toFile();
-                    var output = new FileOutputStream(tempFile);
-                    output.write(256);
+                        map = {'test': 'here'};
+                        var tempFile = runContext.workingDir().createTempFile().toFile();
+                        var output = new FileOutputStream(tempFile);
+                        output.write(256);
 
-                    out = runContext.storage().putFile(tempFile);
-                    return {"map": map, "out": out};
-                    })"""
-            ))
+                        out = runContext.storage().putFile(tempFile);
+                        return {"map": map, "out": out};
+                        })"""
+                )
+            )
             .outputs(Property.ofValue(List.of("map", "out")))
             .build();
 
