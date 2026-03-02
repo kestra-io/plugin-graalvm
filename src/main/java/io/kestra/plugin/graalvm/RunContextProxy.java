@@ -238,4 +238,9 @@ public class RunContextProxy extends RunContext {
     public InputAndOutput inputAndOutput() {
         return delegate.inputAndOutput();
     }
+
+    @Override
+    public SDK sdk() {
+        throw new UnsupportedOperationException();
+    }
 }
