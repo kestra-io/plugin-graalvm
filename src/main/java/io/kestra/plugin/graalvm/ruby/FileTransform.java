@@ -22,7 +22,7 @@ import org.graalvm.polyglot.Value;
 @NoArgsConstructor
 @Schema(
     title = "Transform rows with Ruby on GraalVM",
-    description = "Reads rows from `from` (kestra:// internal storage or inline JSON), lets Ruby mutate `row` via `Polyglot.import` and optionally drop it, then writes an ION file. Use `concurrent` to parallelize (order not preserved); output URI points to the temporary transformed file."
+    description = "Streams rows from `from` (kestra:// URI, map, or list), lets Ruby mutate `row` via `Polyglot.import`, and writes the result as an ION file. Set `concurrent` to parallelize (order not preserved). Export `row = nil` to drop a record; use `rows` array to emit multiples."
 )
 @Plugin(
     examples = {

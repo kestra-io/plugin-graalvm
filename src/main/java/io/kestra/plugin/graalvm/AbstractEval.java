@@ -21,7 +21,8 @@ import java.util.Map;
 @NoArgsConstructor
 public abstract class AbstractEval extends AbstractScript implements RunnableTask<AbstractEval.Output> {
     @Schema(
-        title = "A List of outputs variables that will be usable in outputs."
+        title = "Names of script outputs",
+        description = "Rendered list of member names to pull from the evaluated value or bindings and expose as task outputs"
     )
     protected Property<List<String>> outputs;
 

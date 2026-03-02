@@ -37,13 +37,13 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     @NotNull
     @Schema(
         title = "Source file containing rows to transform.",
-        description = "Can be a Kestra internal storage URI, a map or a list."
+        description = "Accepts a kestra:// internal storage URI, map, or list; rows stream into the script before being rewritten as ION"
     )
     private Property<String> from;
 
     @Schema(
-        title = "Number of concurrent parallel transformations to execute.",
-        description = "Take care that the order is **not respected** if you use parallelism."
+        title = "Parallel transformations to execute",
+        description = "Number of concurrent workers; ordering is not preserved when set and execution defaults to sequential when null"
     )
     private Property<@Min(2) Integer> concurrent;
 
