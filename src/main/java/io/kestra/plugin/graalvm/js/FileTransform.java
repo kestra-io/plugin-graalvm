@@ -66,11 +66,15 @@ import lombok.experimental.SuperBuilder;
     }
 )
 public class FileTransform extends AbstractFileTransform {
+
+    @PluginProperty(language = MonacoLanguages.JAVASCRIPT)
+    @Override
+    public Property<String> getScript() {
+        return super.getScript();
+    }
+
     @Override
     public Output run(RunContext runContext) throws Exception {
         return this.run(runContext, "js");
     }
-
-    @PluginProperty(language = MonacoLanguages.JAVASCRIPT)
-    protected Property<String> script;
 }

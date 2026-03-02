@@ -66,7 +66,10 @@ import lombok.experimental.SuperBuilder;
 public class FileTransform extends AbstractFileTransform {
 
     @PluginProperty(language = MonacoLanguages.PYTHON)
-    protected Property<String> script;
+    @Override
+    public Property<String> getScript() {
+        return super.getScript();
+    }
 
     @Override
     public Output run(RunContext runContext) throws Exception {
