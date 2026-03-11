@@ -16,3 +16,5 @@ out/
 src/test/resources/application-test.yml
 
 allure-results/
+.factorypath
+bin/
