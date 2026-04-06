@@ -27,6 +27,7 @@ import java.util.function.Function;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 import static io.kestra.core.utils.Rethrow.throwFunction;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -39,6 +40,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         title = "Source file containing rows to transform.",
         description = "Accepts a kestra:// internal storage URI, map, or list; rows stream into the script before being rewritten as ION"
     )
+    @PluginProperty(group = "main")
     private Property<String> from;
 
     @Schema(

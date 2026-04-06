@@ -121,6 +121,7 @@ public class Eval extends AbstractEval {
         title = "Inline Python modules to preload",
         description = "Map of filename to module content or a `kestra://` URI; files are written to a temporary module path before execution"
     )
+    @PluginProperty(group = "advanced")
     private Property<Map<String, String>> modules;
 
     @PluginProperty(language = MonacoLanguages.PYTHON)

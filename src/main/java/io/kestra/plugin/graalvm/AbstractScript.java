@@ -13,6 +13,7 @@ import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 
 import java.io.OutputStream;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -25,6 +26,7 @@ abstract class AbstractScript extends Task {
         description = "Template-rendered source code run by GraalVM in the selected language; flow variables are resolved before execution"
     )
     @NotNull
+    @PluginProperty(group = "main")
     protected Property<String> script;
 
     protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) {
