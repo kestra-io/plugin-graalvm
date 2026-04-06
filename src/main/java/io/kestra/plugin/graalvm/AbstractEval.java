@@ -13,6 +13,7 @@ import java.io.PipedOutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -24,6 +25,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         title = "Names of script outputs",
         description = "Rendered list of member names to pull from the evaluated value or bindings and expose as task outputs"
     )
+    @PluginProperty(group = "advanced")
     protected Property<List<String>> outputs;
 
     protected Output run(RunContext runContext, String languageId) throws Exception {
