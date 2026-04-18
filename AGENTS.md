@@ -2,11 +2,13 @@
 
 ## What
 
-Use GraalVM scripting engine with Kestra data workflows. Exposes 6 plugin components (tasks, triggers, and/or conditions).
+- Provides plugin components under `io.kestra.plugin.graalvm`.
+- Includes classes such as `SLF4JJULHandler`, `RunContextProxy`, `LogRunnable`, `FileTransform`.
 
 ## Why
 
-Enables Kestra workflows to interact with GraalVM, allowing orchestration of GraalVM-based operations as part of data pipelines and automation workflows.
+- This plugin integrates Kestra with GraalVM.
+- It provides tasks that run JS, Python, or Ruby code via the GraalVM engine.
 
 ## How
 
@@ -35,24 +37,7 @@ plugin-graalvm/
 └── README.md
 ```
 
-### Important Commands
+## References
 
-```bash
-# Build the plugin
-./gradlew shadowJar
-
-# Run tests
-./gradlew test
-
-# Build without tests
-./gradlew shadowJar -x test
-```
-
-### Configuration
-
-All tasks and triggers accept standard Kestra plugin properties. Credentials should use
-`{{ secret('SECRET_NAME') }}` — never hardcode real values.
-
-## Agents
-
-**IMPORTANT:** This is a Kestra plugin repository (prefixed by `plugin-`, `storage-`, or `secret-`). You **MUST** delegate all coding tasks to the `kestra-plugin-developer` agent. Do NOT implement code changes directly — always use this agent.
+- https://kestra.io/docs/plugin-developer-guide
+- https://kestra.io/docs/plugin-developer-guide/contribution-guidelines
