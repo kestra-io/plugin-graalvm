@@ -135,11 +135,6 @@ public class RunContextProxy extends RunContext {
     }
 
     @Override
-    public URI getStorageOutputPrefix() {
-        return delegate.getStorageOutputPrefix();
-    }
-
-    @Override
     public Storage storage() {
         return delegate.storage();
     }
@@ -172,11 +167,6 @@ public class RunContextProxy extends RunContext {
     @Override
     public void cleanup() {
         delegate.cleanup();
-    }
-
-    @Override
-    public String tenantId() {
-        return delegate.tenantId();
     }
 
     @Override
@@ -215,11 +205,6 @@ public class RunContextProxy extends RunContext {
     }
 
     @Override
-    public boolean isInitialized() {
-        return delegate.isInitialized();
-    }
-
-    @Override
     public AclChecker acl() {
         return delegate.acl();
     }
@@ -242,5 +227,10 @@ public class RunContextProxy extends RunContext {
     @Override
     public SDK sdk() {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Map<String, Object> currentOutput() {
+        return delegate.currentOutput();
     }
 }
