@@ -1,5 +1,5 @@
 @PluginSubGroup(
-        title = "Ruby tasks on GraalVM",
+        title = "Ruby - GraalVM",
         description = "Tasks that run Ruby in-process on GraalVM for inline evaluation and file transformations.",
         categories = { PluginSubGroup.PluginCategory.DATA, PluginSubGroup.PluginCategory.INFRASTRUCTURE }
 )
