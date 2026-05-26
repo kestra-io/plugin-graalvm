@@ -3,6 +3,7 @@ package io.kestra.plugin.graalvm.js;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContextFactory;
+import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
@@ -11,6 +12,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
@@ -65,6 +69,14 @@ public class FileTransformTest {
                     {date:"2025-03-19",title:"Apple_Network_Server",views:1835,time:"12:00:00Z"}
                     {date:"2025-03-19",title:"ChatGPT",views:1715,time:"12:00:00Z"}
                     {date:"2025-03-19",title:"Portal:Current_events",views:1462,time:"12:00:00Z"}"""));
+            }
+
+            // Verify structured ION deserialization works (ION binary migration validation)
+            try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
+                List<Object> result = new ArrayList<>();
+                FileSerde.read(ionIs, result::add);
+                assertThat(result.size(), is(7));
+                assertThat(((Map<String, Object>) result.get(0)).get("title"), is("Sunita_Williams"));
             }
         }
     }
