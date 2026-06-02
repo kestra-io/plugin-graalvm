@@ -56,9 +56,9 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         var source = generateSource(languageId, runContext);
 
-        try (var output = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+        try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
             if (from.startsWith("kestra://")) {
-                try (BufferedReader inputStream = new BufferedReader(new InputStreamReader(runContext.storage().getFile(URI.create(from))), FileSerde.BUFFER_SIZE)) {
+                try (var inputStream = new BufferedInputStream(runContext.storage().getFile(URI.create(from)), FileSerde.BUFFER_SIZE)) {
                     this.finalize(
                             runContext,
                             FileSerde.readAll(inputStream),
@@ -96,7 +96,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         RunContext runContext,
         Flux<Object> flowable,
         Source scripts,
-        Writer output
+        OutputStream output
     ) throws IOException, IllegalVariableEvaluationException, InterruptedException {
         Thread stdOut = null;
         Thread stdErr = null;
