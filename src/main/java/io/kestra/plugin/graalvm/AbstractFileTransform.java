@@ -37,7 +37,7 @@ import io.kestra.core.models.annotations.PluginProperty;
 public abstract class AbstractFileTransform extends AbstractScript implements RunnableTask<AbstractFileTransform.Output> {
     @NotNull
     @Schema(
-        title = "Source file containing rows to transform.",
+        title = "Source file containing rows to transform",
         description = "Accepts a kestra:// internal storage URI, map, or list; rows stream into the script before being rewritten as ION"
     )
     @PluginProperty(group = "main")
@@ -176,7 +176,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "URI of a temporary result file.",
+            title = "URI of a temporary result file",
             description = "The file will be serialized as an ION file."
         )
         private final URI uri;
