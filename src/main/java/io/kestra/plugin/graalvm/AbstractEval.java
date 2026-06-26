@@ -145,10 +145,11 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
     @Getter
     @ToString
     public static class Output implements io.kestra.core.models.tasks.Output {
+        @Schema(title = "Result of the evaluated expression")
         private Object result;
 
         @Schema(
-            title = "The captured outputs as declared on the `outputs` task property."
+            title = "The captured outputs as declared on the `outputs` task property"
         )
         private final Map<String, Object> outputs;
     }
