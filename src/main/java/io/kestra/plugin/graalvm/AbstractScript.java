@@ -42,8 +42,24 @@ abstract class AbstractScript extends Task {
             )
             // allow loading class
             .allowHostClassLoading(true)
-            // restrict loading class to java.* and io.kestra.core.models.*
-            .allowHostClassLookup(name -> name.startsWith("java.") || name.startsWith("io.kestra.core.models"))
+            // restrict loading class to java.* and io.kestra.core.models.* but deny
+            // dangerous packages that allow OS command execution or arbitrary reflection
+            .allowHostClassLookup(name -> {
+                // Block Java packages that enable OS-level command execution, reflection, and networking
+                if (name.startsWith("java.lang.Runtime")
+                        || name.startsWith("java.lang.ProcessBuilder")
+                        || name.startsWith("java.lang.Process")
+                        || name.startsWith("java.lang.reflect.")
+                        || name.startsWith("java.lang.invoke.")
+                        || name.startsWith("java.net.")
+                        || name.startsWith("java.rmi.")
+                        || name.startsWith("javax.script.")
+                        || name.startsWith("sun.")
+                        || name.startsWith("com.sun.")) {
+                    return false;
+                }
+                return name.startsWith("java.") || name.startsWith("io.kestra.core.models");
+            })
             // log to the run context logger
             .logHandler(new SLF4JJULHandler(runContext.logger()))
             // needed for Ruby
