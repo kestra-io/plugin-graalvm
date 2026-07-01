@@ -135,8 +135,17 @@ public class Eval extends AbstractEval {
         if (modules != null) {
             Path modulePath = runContext.workingDir().resolve(MODULE_PATH).resolve("src");
             Files.createDirectories(modulePath);
+            final Path normalizedModulePath = modulePath.normalize();
             runContext.render(modules).asMap(String.class, String.class).forEach(throwBiConsumer((k, v) -> {
+                // Prevent path traversal: reject absolute paths and keys containing separators
+                if (k.contains("/") || k.contains("\\") || k.startsWith(".")) {
+                    throw new IllegalArgumentException("Module filename must not contain path separators or start with '.': " + k);
+                }
                 Path moduleFile = modulePath.resolve(k);
+                // Verify the resolved path stays within the module directory
+                if (!moduleFile.normalize().startsWith(normalizedModulePath)) {
+                    throw new IllegalArgumentException("Module filename escapes module directory: " + k);
+                }
                 byte[] content;
                 if (v.startsWith(StorageContext.KESTRA_PROTOCOL)) {
                     content = runContext.storage().getFile(URI.create(v)).readAllBytes();

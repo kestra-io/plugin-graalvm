@@ -145,7 +145,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             var bindings = getBindings(context, scripts.getLanguage());
             // add all common vars to bindings in case of concurrency
             runContext.getVariables().forEach((key, value) -> bindings.putMember(key, value));
-            bindings.putMember("runContext", runContext);
+            bindings.putMember("runContext", new RunContextProxy(runContext));
             bindings.putMember("logger", runContext.logger());
             bindings.putMember("row", row);
 

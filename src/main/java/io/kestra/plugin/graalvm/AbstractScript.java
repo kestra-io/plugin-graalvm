@@ -38,12 +38,44 @@ abstract class AbstractScript extends Task {
             .allowHostAccess(HostAccess
                     .newBuilder(HostAccess.EXPLICIT)
                     .allowArrayAccess(true).allowListAccess(true).allowBufferAccess(true).allowIterableAccess(true).allowIteratorAccess(true).allowMapAccess(true).allowPublicAccess(true)
+                    // Deny method invocation on dangerous types even when an instance is obtained
+                    // indirectly (e.g. via Object.getClass()). This closes reflection-based bypasses
+                    // of allowHostClassLookup such as `x.getClass().getClassLoader().loadClass(...)`.
+                    .denyAccess(Class.class)
+                    .denyAccess(ClassLoader.class)
+                    .denyAccess(java.lang.reflect.AccessibleObject.class) // Method, Field, Constructor
+                    .denyAccess(java.lang.reflect.Executable.class)
+                    .denyAccess(Runtime.class)
+                    .denyAccess(ProcessBuilder.class)
+                    .denyAccess(Process.class)
+                    .denyAccess(System.class)
                     .build()
             )
             // allow loading class
             .allowHostClassLoading(true)
-            // restrict loading class to java.* and io.kestra.core.models.*
-            .allowHostClassLookup(name -> name.startsWith("java.") || name.startsWith("io.kestra.core.models"))
+            // restrict loading class to java.* and io.kestra.core.models.* but deny
+            // dangerous packages that allow OS command execution or arbitrary reflection
+            .allowHostClassLookup(name -> {
+                // Block Java classes/packages that enable OS-level command execution, reflection,
+                // class loading, JVM control, and networking. This is defense-in-depth on top of the
+                // HostAccess denyAccess rules above (which also block indirectly-obtained instances).
+                if (name.equals("java.lang.Runtime")
+                        || name.equals("java.lang.ProcessBuilder")
+                        || name.startsWith("java.lang.Process")
+                        || name.equals("java.lang.System")
+                        || name.equals("java.lang.Class")
+                        || name.equals("java.lang.ClassLoader")
+                        || name.startsWith("java.lang.reflect.")
+                        || name.startsWith("java.lang.invoke.")
+                        || name.startsWith("java.net.")
+                        || name.startsWith("java.rmi.")
+                        || name.startsWith("javax.script.")
+                        || name.startsWith("sun.")
+                        || name.startsWith("com.sun.")) {
+                    return false;
+                }
+                return name.startsWith("java.") || name.startsWith("io.kestra.core.models");
+            })
             // log to the run context logger
             .logHandler(new SLF4JJULHandler(runContext.logger()))
             // needed for Ruby

@@ -15,11 +15,29 @@ import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 class EvalTest {
     @Inject
     private RunContextFactory runContextFactory;
+
+    @Test
+    void rejectModulePathTraversal() {
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .modules(Property.ofValue(
+                Map.of("../evil.py", "x = 1\n")
+            ))
+            .script(Property.ofValue("pass\n"))
+            .build();
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), containsString("path separators"));
+    }
 
     @Test
     void runValue() throws Exception {

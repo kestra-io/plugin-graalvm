@@ -14,11 +14,61 @@ import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 class EvalTest {
     @Inject
     private RunContextFactory runContextFactory;
+
+    private Eval evalOf(String script) {
+        return Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue(script))
+            .build();
+    }
+
+    @Test
+    void denyRuntimeLookup() {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("Java.type('java.lang.Runtime').getRuntime().exec('id')");
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyProcessBuilderLookup() {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("new (Java.type('java.lang.ProcessBuilder'))(['id']).start()");
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denySystemLookup() {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("Java.type('java.lang.System').getenv()");
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyReflectionBypassViaClassLoader() {
+        // The key bypass a lookup-only denylist misses: obtain a Class indirectly and use its
+        // ClassLoader to load a denied class, then reflectively invoke it.
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf(
+            """
+            var rt = ''.getClass().getClassLoader().loadClass('java.lang.Runtime');
+            rt.getMethod('getRuntime').invoke(null);"""
+        );
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyReflectionBypassViaClassForName() {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("Java.type('java.lang.Class').forName('java.lang.Runtime')");
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
 
     @Test
     void runValue() throws Exception {
