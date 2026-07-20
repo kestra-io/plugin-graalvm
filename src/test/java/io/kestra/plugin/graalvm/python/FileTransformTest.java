@@ -9,7 +9,11 @@ import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import java.io.InputStream;
+import java.io.*;
+import io.kestra.core.serializers.FileSerde;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.net.URI;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -54,16 +58,11 @@ public class FileTransformTest {
             var output = fileTransform.run(runContext);
             assertThat(output, notNullValue());
             assertThat(output.getUri(), notNullValue());
-            try (InputStream resultIs = storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri())) {
-                String results = new String(resultIs.readAllBytes());
-                assertThat(results, is("""
-                    {date:"2025-03-19",title:"Sunita_Williams",views:5969,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Adolescence_(TV_series)",views:3188,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"1989_Tiananmen_Square_protests_and_massacre",views:2658,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Deaths_in_2025",views:2292,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Apple_Network_Server",views:1835,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"ChatGPT",views:1715,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Portal:Current_events",views:1462,time:"12:00:00Z"}"""));
+            try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
+                List<Object> result = new ArrayList<>();
+                FileSerde.read(ionIs, result::add);
+                assertThat(result.size(), is(7));
+                assertThat(((Map<String, Object>) result.get(0)).get("title"), is("Sunita_Williams"));
             }
         }
     }

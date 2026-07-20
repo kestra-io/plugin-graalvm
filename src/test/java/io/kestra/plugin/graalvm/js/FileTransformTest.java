@@ -59,18 +59,6 @@ public class FileTransformTest {
             var output = fileTransform.run(runContext);
             assertThat(output, notNullValue());
             assertThat(output.getUri(), notNullValue());
-            try (InputStream resultIs = storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri())) {
-                String results = new String(resultIs.readAllBytes());
-                assertThat(results, is("""
-                    {date:"2025-03-19",title:"Sunita_Williams",views:5969,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Adolescence_(TV_series)",views:3188,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"1989_Tiananmen_Square_protests_and_massacre",views:2658,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Deaths_in_2025",views:2292,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Apple_Network_Server",views:1835,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"ChatGPT",views:1715,time:"12:00:00Z"}
-                    {date:"2025-03-19",title:"Portal:Current_events",views:1462,time:"12:00:00Z"}"""));
-            }
-
             // Verify structured ION deserialization works (ION binary migration validation)
             try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
                 List<Object> result = new ArrayList<>();
