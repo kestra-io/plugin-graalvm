@@ -40,6 +40,11 @@ public class RunContextProxy extends RunContext {
     }
 
     @Override
+    public List<String> getSecretOutputs() {
+        return delegate.getSecretOutputs();
+    }
+
+    @Override
     public String getTraceParent() {
         return delegate.getTraceParent();
     }
