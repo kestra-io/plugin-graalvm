@@ -23,7 +23,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Transform rows with Python on GraalVM",
-    description = "Streams rows from `from` (kestra:// URI, map, or list), lets Python mutate `row`, and writes the result as an ION file. Set `concurrent` to parallelize (order not preserved). Set `row = None` to drop a record; set `rows` array to emit multiple rows."
+    description = "Streams rows from `from` (kestra:// URI, map, or list), lets Python mutate `row`, and writes the result as an ION file. Set `concurrent` to parallelize (order not preserved). Set `row = None` to drop a record; set `rows` array to emit multiple rows. Supports C-extension-backed stdlib modules such as `ssl`, `sqlite3`, and `lzma`, which requires enabling native access at the GraalVM engine level. Standard OS process APIs (`os.system`, `subprocess`) stay blocked, but this grant cannot be scoped down further: a script that reaches native code directly (e.g. `ctypes`) can still execute arbitrary OS commands or manipulate process memory. Unlike Kestra's `Script`/`Shell` tasks, which typically run in an isolated container or process via a `TaskRunner`, this code runs inline in the worker JVM process itself, so it has direct access to the worker process's own memory, file descriptors, and any secrets or other task state resident in that JVM. Only run scripts from users already trusted with the flow's credentials and infrastructure, as with any script task."
 )
 @Plugin(
     examples = {
@@ -74,5 +74,10 @@ public class FileTransform extends AbstractFileTransform {
     @Override
     public Output run(RunContext runContext) throws Exception {
         return this.run(runContext, "python");
+    }
+
+    @Override
+    protected boolean allowNativeAccess() {
+        return true;
     }
 }
