@@ -75,4 +75,9 @@ public class FileTransform extends AbstractFileTransform {
     public Output run(RunContext runContext) throws Exception {
         return this.run(runContext, "python");
     }
+
+    @Override
+    protected boolean allowNativeAccess() {
+        return true;
+    }
 }

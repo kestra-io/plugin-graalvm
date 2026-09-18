@@ -7,11 +7,20 @@ import io.kestra.core.runners.RunContextFactory;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -19,6 +28,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 class EvalTest {
+    // The issue's own repro script: these modules extract native/platform resources from the Python
+    // stdlib and used to fail once the GraalPy user resource cache (~/.cache/org.graalvm.polyglot)
+    // was unwritable, wiped, or corrupted (kestra-io/plugin-graalvm#40).
+    static final String STDLIB_IMPORT_SCRIPT = """
+        import json
+        import ssl
+        import urllib
+        import http
+        import email
+        import sqlite3
+        import lzma
+        import zoneinfo
+        """;
+
     @Inject
     private RunContextFactory runContextFactory;
 
@@ -115,5 +138,76 @@ class EvalTest {
 
         var runOutput = task.run(runContext);
         assertThat(runOutput, notNullValue());
+    }
+
+    @Test
+    void stdlibImports() throws Exception {
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue(STDLIB_IMPORT_SCRIPT))
+            .build();
+
+        var runOutput = task.run(runContext);
+        assertThat(runOutput, notNullValue());
+    }
+
+    @Test
+    void stdlibImportsWithUnwritableDefaultResourceCache(@TempDir Path tempDir) throws Exception {
+        // Reproduces the issue: with neither polyglot.engine.userResourceCache nor
+        // polyglot.engine.resourcePath set, GraalVM falls back to $XDG_CACHE_HOME or
+        // ${user.home}/.cache/org.graalvm.polyglot to extract the stdlib. Pointing user.home at a
+        // regular file (not a directory) makes that OS-default location unusable regardless of OS
+        // user/permissions (including root in CI). EngineHolder must default userResourceCache to a
+        // writable path under java.io.tmpdir before that broken default is ever consulted.
+        Path unwritableHome = tempDir.resolve("not-a-directory");
+        Files.createFile(unwritableHome);
+
+        List<String> command = new ArrayList<>();
+        command.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
+        command.add("-Duser.home=" + unwritableHome);
+        command.add("-cp");
+        command.add(System.getProperty("java.class.path"));
+        command.add(StdlibImportForkMain.class.getName());
+
+        ProcessBuilder processBuilder = new ProcessBuilder(command).redirectErrorStream(true);
+        processBuilder.environment().remove("XDG_CACHE_HOME");
+        Process process = processBuilder.start();
+
+        var output = new StringBuilder();
+        Thread outputReader = Thread.ofVirtual().start(() -> {
+            try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                reader.lines().forEach(line -> output.append(line).append('\n'));
+            } catch (IOException ignored) {
+                // stream closes when the process is destroyed below; nothing to recover
+            }
+        });
+
+        boolean completed = process.waitFor(90, TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroyForcibly();
+        }
+        outputReader.join(java.time.Duration.ofSeconds(5).toMillis());
+
+        assertThat("forked JVM did not complete in time, output so far:\n" + output, completed, is(true));
+        assertThat(output.toString(), containsString(StdlibImportForkMain.SUCCESS_MARKER));
+        assertThat(process.exitValue(), is(0));
+    }
+
+    @Test
+    void rejectsSandboxWeakeningOption() {
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("pass\n"))
+            .options(Property.ofValue(Map.of("python.PosixModuleBackend", "native")))
+            .build();
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), containsString("python.PosixModuleBackend"));
     }
 }

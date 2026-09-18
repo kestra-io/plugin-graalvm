@@ -12,7 +12,14 @@ import org.graalvm.polyglot.*;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 
+import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
@@ -29,11 +36,26 @@ abstract class AbstractScript extends Task {
     @PluginProperty(group = "main")
     protected Property<String> script;
 
-    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) {
-        return contextBuilder(runContext)
+    @Schema(
+        title = "Advanced GraalVM context options",
+        description = """
+            Maps directly to GraalVM's `Context.Builder#options`: one entry per option key/value, for example `python.WarnOptions` or `js.ecmascript-version`.
+            Keys that would weaken the sandbox already enforced by this task are rejected at execution time: `python.PosixModuleBackend`, any key related to host access or class loading, and any key prefixed with `engine.` or `sandbox.`.
+            """
+    )
+    @PluginProperty(group = "advanced")
+    protected Property<Map<String, String>> options;
+
+    // Keys that would let a script weaken the sandbox already enforced by buildContext() below.
+    private static final Set<String> DENIED_OPTION_KEYS = Set.of("python.PosixModuleBackend");
+    private static final List<String> DENIED_OPTION_PREFIXES = List.of("engine.", "sandbox.");
+    private static final List<String> DENIED_OPTION_KEYWORDS = List.of(
+        "hostaccess", "hostclasslookup", "hostclassloading", "hostlookup", "classloader", "classloading"
+    );
+
+    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException {
+        Context.Builder builder = contextBuilder(runContext)
             .engine(getEngine())
-            // allow I/O
-            .allowIO(IOAccess.ALL)
             // allow host access with a curated default
             .allowHostAccess(HostAccess
                     .newBuilder(HostAccess.EXPLICIT)
@@ -82,23 +104,67 @@ abstract class AbstractScript extends Task {
             .allowPolyglotAccess(PolyglotAccess.ALL)
             // needed for Ruby
             .allowCreateThread(true)
+            // needed by Python C extensions such as ssl, sqlite3, and lzma
+            .allowNativeAccess(allowNativeAccess())
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
-            .err(err)
-            .build();
+            .err(err);
+
+        runContext.render(this.options).asMap(String.class, String.class).forEach((key, value) -> {
+            validateOptionKey(key);
+            builder.option(key, value);
+        });
+
+        return builder.build();
+    }
+
+    private static void validateOptionKey(String key) {
+        if (DENIED_OPTION_KEYS.contains(key)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it lets the guest language bypass the sandboxed POSIX backend enforced by this task.");
+        }
+        if (DENIED_OPTION_PREFIXES.stream().anyMatch(key::startsWith)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: options prefixed with 'engine.' or 'sandbox.' can weaken the sandboxing enforced by this task.");
+        }
+        String lowerKey = key.toLowerCase();
+        if (DENIED_OPTION_KEYWORDS.stream().anyMatch(lowerKey::contains)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it would override the host-access or class-loading restrictions already enforced by this task.");
+        }
     }
 
     protected Value getBindings(Context context, String languageId) {
         return context.getBindings(languageId);
     }
 
+    protected boolean allowNativeAccess() {
+        return false;
+    }
+
     protected Context.Builder contextBuilder(RunContext runContext) {
-        return Context.newBuilder();
+        return Context.newBuilder().allowIO(IOAccess.ALL);
     }
 
     // initialization-on-demand holder idiom
     private static class EngineHolder {
-        static final Engine INSTANCE = Engine.create();
+        static final Engine INSTANCE = createEngine();
+
+        private static Engine createEngine() {
+            // GraalPy/TruffleRuby extract their stdlib to this cache directory on first use. If it's
+            // unset, the default is a user home directory (~/.cache/org.graalvm.polyglot) that may be
+            // unwritable, wiped, or corrupted in rootless / distributed deployments (issue #40). Default
+            // it to a writable path under java.io.tmpdir, but never override an operator-set value.
+            if (System.getProperty("polyglot.engine.userResourceCache") == null
+                    && System.getProperty("polyglot.engine.resourcePath") == null) {
+                try {
+                    Path cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
+                    Files.createDirectories(cacheDir);
+                    System.setProperty("polyglot.engine.userResourceCache", cacheDir.toString());
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Unable to create a writable GraalVM resource cache directory under java.io.tmpdir", e);
+                }
+            }
+
+            return Engine.create();
+        }
     }
 
     private Engine getEngine() {

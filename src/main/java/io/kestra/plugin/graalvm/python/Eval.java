@@ -15,7 +15,6 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.Context;
 import org.graalvm.python.embedding.GraalPyResources;
-import org.graalvm.python.embedding.VirtualFileSystem;
 
 import java.io.File;
 import java.net.URI;
@@ -166,5 +165,10 @@ public class Eval extends AbstractEval {
         } else {
             return GraalPyResources.contextBuilder(runContext.workingDir().resolve(MODULE_PATH));
         }
+    }
+
+    @Override
+    protected boolean allowNativeAccess() {
+        return true;
     }
 }
