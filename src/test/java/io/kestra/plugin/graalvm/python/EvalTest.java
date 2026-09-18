@@ -6,6 +6,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
+import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -165,12 +166,39 @@ class EvalTest {
         Path unwritableHome = tempDir.resolve("not-a-directory");
         Files.createFile(unwritableHome);
 
+        runForked(
+            List.of("-Duser.home=" + unwritableHome),
+            StdlibImportForkMain.class,
+            StdlibImportForkMain.SUCCESS_MARKER
+        );
+    }
+
+    @Test
+    void engineHolderFallsBackWhenResourceCacheDirIsUnwritable(@TempDir Path tempDir) throws Exception {
+        // Forces Files.createDirectories(cacheDir) to fail inside EngineHolder.createEngine()'s static
+        // field initializer by pre-creating "<tmpdir>/kestra-graalvm-resource-cache" as a regular file
+        // instead of a directory, so that exact subdirectory can never be created. java.io.tmpdir itself
+        // stays a real, writable directory so unrelated JVM startup machinery (e.g. Flight Recorder) is
+        // unaffected. The forked main runs two scripts back to back: if the caught IOException were
+        // rethrown instead of logged and swallowed, the static holder would be poisoned for the rest of
+        // the JVM's lifetime (JLS class-initialization semantics), and even the second script would fail
+        // with NoClassDefFoundError instead of the original exception.
+        Files.createFile(tempDir.resolve("kestra-graalvm-resource-cache"));
+
+        runForked(
+            List.of("-Djava.io.tmpdir=" + tempDir),
+            EngineHolderFallbackForkMain.class,
+            EngineHolderFallbackForkMain.SUCCESS_MARKER
+        );
+    }
+
+    private void runForked(List<String> jvmArgs, Class<?> mainClass, String successMarker) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
-        command.add("-Duser.home=" + unwritableHome);
+        command.addAll(jvmArgs);
         command.add("-cp");
         command.add(System.getProperty("java.class.path"));
-        command.add(StdlibImportForkMain.class.getName());
+        command.add(mainClass.getName());
 
         ProcessBuilder processBuilder = new ProcessBuilder(command).redirectErrorStream(true);
         processBuilder.environment().remove("XDG_CACHE_HOME");
@@ -192,7 +220,7 @@ class EvalTest {
         outputReader.join(java.time.Duration.ofSeconds(5).toMillis());
 
         assertThat("forked JVM did not complete in time, output so far:\n" + output, completed, is(true));
-        assertThat(output.toString(), containsString(StdlibImportForkMain.SUCCESS_MARKER));
+        assertThat(output.toString(), containsString(successMarker));
         assertThat(process.exitValue(), is(0));
     }
 
@@ -209,5 +237,24 @@ class EvalTest {
 
         var exception = assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
         assertThat(exception.getMessage(), containsString("python.PosixModuleBackend"));
+    }
+
+    @Test
+    void blocksDirectNativeFFIFromPythonScripts() {
+        // Demonstrates the boundary PythonNativeAccessGuard enforces: allowNativeAccess(true) is
+        // required engine-wide for C-extension-backed stdlib modules (ssl, sqlite3, lzma -- see
+        // stdlibImports() above), but a script must not be able to use that grant to shell out directly
+        // via ctypes, e.g. ctypes.CDLL(None).system("..."). Importing ctypes must fail even though
+        // native access is otherwise enabled for this task.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("import ctypes\n"))
+            .build();
+
+        var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), containsString("ctypes"));
     }
 }

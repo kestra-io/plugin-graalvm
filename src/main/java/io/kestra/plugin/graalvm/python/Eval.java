@@ -32,7 +32,7 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline Python with GraalVM",
-    description = "Runs inline Python inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them. Allows file I/O and host class access restricted to `java.*` and `io.kestra.core.models.*`. Optional `modules` preload Python files from content or `kestra://` URIs onto the module path."
+    description = "Runs inline Python inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them. Allows file I/O and host class access restricted to `java.*` and `io.kestra.core.models.*`. Optional `modules` preload Python files from content or `kestra://` URIs onto the module path. Supports C-extension-backed stdlib modules such as `ssl`, `sqlite3`, and `lzma`, which requires enabling native access at the GraalVM engine level; only run scripts from users already trusted with the flow's credentials and infrastructure, as with any script task."
 )
 @Plugin(
     examples = {
@@ -170,5 +170,10 @@ public class Eval extends AbstractEval {
     @Override
     protected boolean allowNativeAccess() {
         return true;
+    }
+
+    @Override
+    protected void hardenNativeAccess(Context context) {
+        PythonNativeAccessGuard.blockDirectFFI(context);
     }
 }

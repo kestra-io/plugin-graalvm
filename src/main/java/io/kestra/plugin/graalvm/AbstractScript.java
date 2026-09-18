@@ -11,10 +11,11 @@ import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.*;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -28,6 +29,8 @@ import io.kestra.core.models.annotations.PluginProperty;
 @Getter
 @NoArgsConstructor
 abstract class AbstractScript extends Task {
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractScript.class);
+
     @Schema(
         title = "Script body to execute",
         description = "Template-rendered source code run by GraalVM in the selected language; flow variables are resolved before execution"
@@ -104,7 +107,8 @@ abstract class AbstractScript extends Task {
             .allowPolyglotAccess(PolyglotAccess.ALL)
             // needed for Ruby
             .allowCreateThread(true)
-            // needed by Python C extensions such as ssl, sqlite3, and lzma
+            // needed by Python C extensions such as ssl, sqlite3, and lzma; see hardenNativeAccess()
+            // below for the compensating controls this engine-wide grant requires
             .allowNativeAccess(allowNativeAccess())
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
@@ -115,19 +119,21 @@ abstract class AbstractScript extends Task {
             builder.option(key, value);
         });
 
-        return builder.build();
+        Context context = builder.build();
+        hardenNativeAccess(context);
+        return context;
     }
 
     private static void validateOptionKey(String key) {
         if (DENIED_OPTION_KEYS.contains(key)) {
-            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it lets the guest language bypass the sandboxed POSIX backend enforced by this task.");
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it lets the guest language bypass the sandboxed POSIX backend enforced by this task. Remove it from `options`; this restriction is permanent and cannot be overridden.");
         }
         if (DENIED_OPTION_PREFIXES.stream().anyMatch(key::startsWith)) {
-            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: options prefixed with 'engine.' or 'sandbox.' can weaken the sandboxing enforced by this task.");
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: options prefixed with 'engine.' or 'sandbox.' can weaken the sandboxing enforced by this task. Remove it from `options`; engine- and sandbox-level configuration is not exposed to task scripts.");
         }
         String lowerKey = key.toLowerCase();
         if (DENIED_OPTION_KEYWORDS.stream().anyMatch(lowerKey::contains)) {
-            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it would override the host-access or class-loading restrictions already enforced by this task.");
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it would override the host-access or class-loading restrictions already enforced by this task. Remove it from `options`; these restrictions are permanent and cannot be overridden.");
         }
     }
 
@@ -137,6 +143,27 @@ abstract class AbstractScript extends Task {
 
     protected boolean allowNativeAccess() {
         return false;
+    }
+
+    /**
+     * Called once, right after context creation, for languages that override {@link #allowNativeAccess()}
+     * to {@code true}. No-op by default.
+     * <p>
+     * GraalVM's {@code allowNativeAccess} is an engine-wide, all-or-nothing switch: there is no
+     * finer-grained polyglot API to grant native access to GraalVM's own bundled C-extension loader
+     * (needed for Python's ssl/sqlite3/lzma) while denying it to arbitrary guest-script code (e.g. a
+     * Python script calling {@code ctypes.CDLL(...).system(...)}). Neither {@code SandboxPolicy}
+     * (a coarse TRUSTED/CONSTRAINED/ISOLATED/UNTRUSTED build-time check, not a runtime restriction) nor
+     * GraalPy's {@code python.NativeModules} option (selects the LLVM-bitcode C-extension backend, but
+     * still requires native access to be allowed at all, confirmed experimentally: GraalPy raises
+     * "Cannot run any C extensions because native access is not allowed" regardless of that option)
+     * offer a way to scope native access down further. Overriding this hook lets a language close the
+     * specific native-FFI escape hatches it knows about as defense-in-depth on top of that unavoidable
+     * engine-wide grant; see {@code PythonNativeAccessGuard} for Python's mitigation and its documented
+     * residual risk.
+     */
+    protected void hardenNativeAccess(Context context) {
+        // no-op: only languages that enable native access need to further restrict it
     }
 
     protected Context.Builder contextBuilder(RunContext runContext) {
@@ -154,12 +181,20 @@ abstract class AbstractScript extends Task {
             // it to a writable path under java.io.tmpdir, but never override an operator-set value.
             if (System.getProperty("polyglot.engine.userResourceCache") == null
                     && System.getProperty("polyglot.engine.resourcePath") == null) {
+                Path cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
                 try {
-                    Path cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
                     Files.createDirectories(cacheDir);
                     System.setProperty("polyglot.engine.userResourceCache", cacheDir.toString());
                 } catch (IOException e) {
-                    throw new UncheckedIOException("Unable to create a writable GraalVM resource cache directory under java.io.tmpdir", e);
+                    // Do NOT throw from a static field initializer: per JLS class-initialization
+                    // semantics, an exception here would poison this holder class for the entire JVM
+                    // lifetime, turning every subsequent call into a NoClassDefFoundError instead of the
+                    // original exception -- a transient tmpdir permission issue on worker boot would
+                    // become a permanent outage for every GraalVM script task until process restart.
+                    // Fall back to GraalVM's own default resource-cache resolution instead: issue #40 may
+                    // resurface, but only in this specific failure mode, which is strictly better than a
+                    // total, unrecoverable outage.
+                    LOG.warn("Unable to create a writable GraalVM resource cache directory at '{}'; falling back to GraalVM's default resource cache resolution, which may be unwritable in rootless or distributed deployments (see issue #40)", cacheDir, e);
                 }
             }
 
