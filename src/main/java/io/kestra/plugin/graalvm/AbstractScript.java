@@ -111,10 +111,11 @@ abstract class AbstractScript extends Task {
             // below for why this engine-wide grant cannot be scoped down further
             .allowNativeAccess(allowNativeAccess())
             // Explicit even though it is GraalVM's default: process creation must stay off regardless of
-            // allowNativeAccess(). Verified experimentally (see PythonEvalTest / FileTransformTest) that
-            // GraalPy's default ("java"/emulated) POSIX backend routes os.system/subprocess through
-            // TruffleLanguage.Env#newProcessBuilder, which this flag -- not allowNativeAccess -- gates:
-            // with it off, both fail with SecurityException/PermissionError even when native access is on.
+            // allowNativeAccess(). Verified experimentally (see python.EvalTest#blocksOsSystemDespiteNativeAccess
+            // and #blocksSubprocessDespiteNativeAccess) that GraalPy's default ("java"/emulated) POSIX
+            // backend routes os.system/subprocess through TruffleLanguage.Env#newProcessBuilder, which this
+            // flag -- not allowNativeAccess -- gates: with it off, both fail with
+            // SecurityException/PermissionError even when native access is on.
             .allowCreateProcess(false)
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
