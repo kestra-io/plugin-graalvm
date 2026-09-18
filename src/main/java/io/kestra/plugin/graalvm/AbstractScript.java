@@ -161,9 +161,13 @@ abstract class AbstractScript extends Task {
      * documented-but-unimplemented no-op -- verified by decompiling {@code SysModuleBuiltins} and
      * confirming both {@code AuditNode.doAudit} and {@code SysAuditHookNode.doAudit} return immediately
      * without recording or invoking any hook) offer a way to scope this down further. Languages that
-     * enable this therefore run scripts with the same trust level Kestra assumes for {@code Script}/
-     * {@code Shell} tasks: not for arbitrary, adversarial, untrusted input as code. See the {@code @Schema}
-     * description on the affected tasks for the user-facing disclosure of this tradeoff.
+     * enable this therefore run scripts with a trust requirement at least as strict as Kestra assumes for
+     * {@code Script}/{@code Shell} tasks: not for arbitrary, adversarial, untrusted input as code. Unlike
+     * those tasks, which typically execute in an isolated container or process via a {@code TaskRunner},
+     * this code runs inline in the worker JVM process itself, so native code reached this way has direct
+     * access to the worker's own memory, file descriptors, and any secrets or other task state resident in
+     * that JVM -- a materially larger blast radius than an isolated container escape. See the
+     * {@code @Schema} description on the affected tasks for the user-facing disclosure of this tradeoff.
      * <p>
      * What native access does <em>not</em> unlock on its own is OS process creation: GraalPy's default
      * ("java"/emulated) POSIX backend routes {@code os.system}/{@code subprocess} through
