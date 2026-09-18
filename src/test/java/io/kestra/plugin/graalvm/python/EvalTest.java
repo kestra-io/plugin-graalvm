@@ -240,21 +240,69 @@ class EvalTest {
     }
 
     @Test
-    void blocksDirectNativeFFIFromPythonScripts() {
-        // Demonstrates the boundary PythonNativeAccessGuard enforces: allowNativeAccess(true) is
-        // required engine-wide for C-extension-backed stdlib modules (ssl, sqlite3, lzma -- see
-        // stdlibImports() above), but a script must not be able to use that grant to shell out directly
-        // via ctypes, e.g. ctypes.CDLL(None).system("..."). Importing ctypes must fail even though
-        // native access is otherwise enabled for this task.
+    void blocksOsSystemDespiteNativeAccess() {
+        // allowNativeAccess(true) is required engine-wide for C-extension-backed stdlib modules (ssl,
+        // sqlite3, lzma -- see stdlibImports() above), but it does NOT, on its own, unlock OS process
+        // creation: GraalPy's default POSIX backend routes os.system through
+        // TruffleLanguage.Env#newProcessBuilder, which is gated by the separate allowCreateProcess
+        // context flag (kept false in AbstractScript#buildContext). Verified experimentally before this
+        // fix: os.system fails with "Process creation is not allowed" even with native access on.
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.ofValue("import ctypes\n"))
+            .script(Property.ofValue("import os\nos.system('echo pwned')\n"))
             .build();
 
         var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
-        assertThat(exception.getMessage(), containsString("ctypes"));
+        assertThat(exception.getMessage(), containsString("Process creation is not allowed"));
+    }
+
+    @Test
+    void blocksSubprocessDespiteNativeAccess() {
+        // Same boundary as blocksOsSystemDespiteNativeAccess() above, exercised through subprocess
+        // instead of os.system: subprocess.run() also goes through the emulated POSIX backend's
+        // fork_exec, which ultimately hits the same allowCreateProcess-gated Env#newProcessBuilder call
+        // and fails, surfaced to the script as a PermissionError.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("import subprocess\nsubprocess.run(['echo', 'pwned'], capture_output=True)\n"))
+            .build();
+
+        var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), containsString("not permitted"));
+    }
+
+    @Test
+    void nativeAccessAllowsRawNativeFfiAsDocumented() throws Exception {
+        // Pins down the documented, accepted residual risk of allowNativeAccess(true) (see the @Schema
+        // description on Eval and AbstractScript#allowNativeAccess): a script that reaches native code
+        // directly via ctypes -- bypassing GraalPy's POSIX/process-creation layer entirely, since
+        // ctypes.CDLL(...).system(...) calls libc directly through NFI rather than through
+        // TruffleLanguage.Env#newProcessBuilder -- can still run arbitrary OS commands. There is no
+        // GraalVM/GraalPy API to prevent this while keeping native access on for ssl/sqlite3/lzma
+        // (confirmed: sys.addaudithook is a documented-but-unimplemented no-op in GraalPy 24.2.2, and
+        // sys.modules poisoning is trivially undone by guest code). This test exists to make that
+        // tradeoff an explicit, visible regression check rather than a silent assumption: if this ever
+        // starts failing, GraalVM has changed its native-access model and the @Schema disclosure and this
+        // test both need revisiting.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("""
+                import ctypes
+                result = ctypes.CDLL(None).system(b"exit 0")
+                """))
+            .outputs(Property.ofValue(List.of("result")))
+            .build();
+
+        var runOutput = task.run(runContext);
+        assertThat(runOutput.getOutputs().get("result"), is(0));
     }
 }

@@ -107,9 +107,15 @@ abstract class AbstractScript extends Task {
             .allowPolyglotAccess(PolyglotAccess.ALL)
             // needed for Ruby
             .allowCreateThread(true)
-            // needed by Python C extensions such as ssl, sqlite3, and lzma; see hardenNativeAccess()
-            // below for the compensating controls this engine-wide grant requires
+            // needed by Python C extensions such as ssl, sqlite3, and lzma; see allowNativeAccess()
+            // below for why this engine-wide grant cannot be scoped down further
             .allowNativeAccess(allowNativeAccess())
+            // Explicit even though it is GraalVM's default: process creation must stay off regardless of
+            // allowNativeAccess(). Verified experimentally (see PythonEvalTest / FileTransformTest) that
+            // GraalPy's default ("java"/emulated) POSIX backend routes os.system/subprocess through
+            // TruffleLanguage.Env#newProcessBuilder, which this flag -- not allowNativeAccess -- gates:
+            // with it off, both fail with SecurityException/PermissionError even when native access is on.
+            .allowCreateProcess(false)
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
             .err(err);
@@ -119,9 +125,7 @@ abstract class AbstractScript extends Task {
             builder.option(key, value);
         });
 
-        var context = builder.build();
-        hardenNativeAccess(context);
-        return context;
+        return builder.build();
     }
 
     private static void validateOptionKey(String key) {
@@ -141,29 +145,35 @@ abstract class AbstractScript extends Task {
         return context.getBindings(languageId);
     }
 
+    /**
+     * Whether this language needs GraalVM's engine-wide native-access grant, e.g. Python's C-extension
+     * stdlib modules (ssl, sqlite3, lzma).
+     * <p>
+     * GraalVM's {@code allowNativeAccess} is an all-or-nothing switch: there is no finer-grained polyglot
+     * API to grant native access to GraalVM's own bundled C-extension loader while denying it to
+     * guest-script code that reaches for raw native FFI directly (e.g. a Python script calling
+     * {@code ctypes.CDLL(None).system(...)}). Neither {@code SandboxPolicy} (a coarse
+     * TRUSTED/CONSTRAINED/ISOLATED/UNTRUSTED build-time check, not a runtime restriction), GraalPy's
+     * {@code python.NativeModules} option (still refuses to run any C extension at all when native access
+     * is disallowed), nor Python-level mitigations (poisoning {@code sys.modules} entries is trivially
+     * undone by guest code with `del sys.modules[...]`; GraalPy 24.2.2's {@code sys.addaudithook} is a
+     * documented-but-unimplemented no-op -- verified by decompiling {@code SysModuleBuiltins} and
+     * confirming both {@code AuditNode.doAudit} and {@code SysAuditHookNode.doAudit} return immediately
+     * without recording or invoking any hook) offer a way to scope this down further. Languages that
+     * enable this therefore run scripts with the same trust level Kestra assumes for {@code Script}/
+     * {@code Shell} tasks: not for arbitrary, adversarial, untrusted input as code. See the {@code @Schema}
+     * description on the affected tasks for the user-facing disclosure of this tradeoff.
+     * <p>
+     * What native access does <em>not</em> unlock on its own is OS process creation: GraalPy's default
+     * ("java"/emulated) POSIX backend routes {@code os.system}/{@code subprocess} through
+     * {@code TruffleLanguage.Env#newProcessBuilder}, which is gated by the separate
+     * {@code allowCreateProcess} context flag (kept {@code false} in {@link #buildContext}, verified
+     * experimentally to still block both even with native access on). Only guest code that reaches native
+     * libc functions directly (ctypes) bypasses that control, since it never goes through Truffle's
+     * process API at all.
+     */
     protected boolean allowNativeAccess() {
         return false;
-    }
-
-    /**
-     * Called once, right after context creation, for languages that override {@link #allowNativeAccess()}
-     * to {@code true}. No-op by default.
-     * <p>
-     * GraalVM's {@code allowNativeAccess} is an engine-wide, all-or-nothing switch: there is no
-     * finer-grained polyglot API to grant native access to GraalVM's own bundled C-extension loader
-     * (needed for Python's ssl/sqlite3/lzma) while denying it to arbitrary guest-script code (e.g. a
-     * Python script calling {@code ctypes.CDLL(...).system(...)}). Neither {@code SandboxPolicy}
-     * (a coarse TRUSTED/CONSTRAINED/ISOLATED/UNTRUSTED build-time check, not a runtime restriction) nor
-     * GraalPy's {@code python.NativeModules} option (selects the LLVM-bitcode C-extension backend, but
-     * still requires native access to be allowed at all, confirmed experimentally: GraalPy raises
-     * "Cannot run any C extensions because native access is not allowed" regardless of that option)
-     * offer a way to scope native access down further. Overriding this hook lets a language close the
-     * specific native-FFI escape hatches it knows about as defense-in-depth on top of that unavoidable
-     * engine-wide grant; see {@code PythonNativeAccessGuard} for Python's mitigation and its documented
-     * residual risk.
-     */
-    protected void hardenNativeAccess(Context context) {
-        // no-op: only languages that enable native access need to further restrict it
     }
 
     protected Context.Builder contextBuilder(RunContext runContext) {
