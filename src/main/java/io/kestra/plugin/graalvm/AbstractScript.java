@@ -57,7 +57,7 @@ abstract class AbstractScript extends Task {
     );
 
     protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException {
-        Context.Builder builder = contextBuilder(runContext)
+        var builder = contextBuilder(runContext)
             .engine(getEngine())
             // allow host access with a curated default
             .allowHostAccess(HostAccess
@@ -119,7 +119,7 @@ abstract class AbstractScript extends Task {
             builder.option(key, value);
         });
 
-        Context context = builder.build();
+        var context = builder.build();
         hardenNativeAccess(context);
         return context;
     }
@@ -131,7 +131,7 @@ abstract class AbstractScript extends Task {
         if (DENIED_OPTION_PREFIXES.stream().anyMatch(key::startsWith)) {
             throw new IllegalArgumentException("Context option '" + key + "' is not allowed: options prefixed with 'engine.' or 'sandbox.' can weaken the sandboxing enforced by this task. Remove it from `options`; engine- and sandbox-level configuration is not exposed to task scripts.");
         }
-        String lowerKey = key.toLowerCase();
+        var lowerKey = key.toLowerCase();
         if (DENIED_OPTION_KEYWORDS.stream().anyMatch(lowerKey::contains)) {
             throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it would override the host-access or class-loading restrictions already enforced by this task. Remove it from `options`; these restrictions are permanent and cannot be overridden.");
         }
@@ -181,7 +181,7 @@ abstract class AbstractScript extends Task {
             // it to a writable path under java.io.tmpdir, but never override an operator-set value.
             if (System.getProperty("polyglot.engine.userResourceCache") == null
                     && System.getProperty("polyglot.engine.resourcePath") == null) {
-                Path cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
+                var cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
                 try {
                     Files.createDirectories(cacheDir);
                     System.setProperty("polyglot.engine.userResourceCache", cacheDir.toString());
