@@ -11,8 +11,18 @@ import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.*;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
@@ -21,6 +31,8 @@ import io.kestra.core.models.annotations.PluginProperty;
 @Getter
 @NoArgsConstructor
 abstract class AbstractScript extends Task {
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractScript.class);
+
     @Schema(
         title = "Script body to execute",
         description = "Template-rendered source code run by GraalVM in the selected language; flow variables are resolved before execution"
@@ -29,11 +41,26 @@ abstract class AbstractScript extends Task {
     @PluginProperty(group = "main")
     protected Property<String> script;
 
-    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) {
-        return contextBuilder(runContext)
+    @Schema(
+        title = "Advanced GraalVM context options",
+        description = """
+            Maps directly to GraalVM's `Context.Builder#options`: one entry per option key/value, for example `python.WarnOptions` or `js.ecmascript-version`.
+            Keys that would weaken the sandbox already enforced by this task are rejected at execution time: `python.PosixModuleBackend`, any key related to host access or class loading, and any key prefixed with `engine.` or `sandbox.`.
+            """
+    )
+    @PluginProperty(group = "advanced")
+    protected Property<Map<String, String>> options;
+
+    // Keys that would let a script weaken the sandbox already enforced by buildContext() below.
+    private static final Set<String> DENIED_OPTION_KEYS = Set.of("python.PosixModuleBackend");
+    private static final List<String> DENIED_OPTION_PREFIXES = List.of("engine.", "sandbox.");
+    private static final List<String> DENIED_OPTION_KEYWORDS = List.of(
+        "hostaccess", "hostclasslookup", "hostclassloading", "hostlookup", "classloader", "classloading"
+    );
+
+    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException {
+        var builder = contextBuilder(runContext)
             .engine(getEngine())
-            // allow I/O
-            .allowIO(IOAccess.ALL)
             // allow host access with a curated default
             .allowHostAccess(HostAccess
                     .newBuilder(HostAccess.EXPLICIT)
@@ -82,23 +109,126 @@ abstract class AbstractScript extends Task {
             .allowPolyglotAccess(PolyglotAccess.ALL)
             // needed for Ruby
             .allowCreateThread(true)
+            // needed by Python C extensions such as ssl, sqlite3, and lzma; see allowNativeAccess()
+            // below for why this engine-wide grant cannot be scoped down further
+            .allowNativeAccess(allowNativeAccess())
+            // Explicit even though it is GraalVM's default: process creation must stay off regardless of
+            // allowNativeAccess(). Verified experimentally (see python.EvalTest#blocksOsSystemDespiteNativeAccess
+            // and #blocksSubprocessDespiteNativeAccess) that GraalPy's default ("java"/emulated) POSIX
+            // backend routes os.system/subprocess through TruffleLanguage.Env#newProcessBuilder, which this
+            // flag -- not allowNativeAccess -- gates: with it off, both fail with
+            // SecurityException/PermissionError even when native access is on.
+            .allowCreateProcess(false)
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
-            .err(err)
-            .build();
+            .err(err);
+
+        runContext.render(this.options).asMap(String.class, String.class).forEach((key, value) -> {
+            validateOptionKey(key);
+            builder.option(key, value);
+        });
+
+        return builder.build();
+    }
+
+    private static void validateOptionKey(String key) {
+        if (DENIED_OPTION_KEYS.contains(key)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it lets the guest language bypass the sandboxed POSIX backend enforced by this task. Remove it from `options`; this restriction is permanent and cannot be overridden.");
+        }
+        if (DENIED_OPTION_PREFIXES.stream().anyMatch(key::startsWith)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: options prefixed with 'engine.' or 'sandbox.' can weaken the sandboxing enforced by this task. Remove it from `options`; engine- and sandbox-level configuration is not exposed to task scripts.");
+        }
+        var lowerKey = key.toLowerCase();
+        if (DENIED_OPTION_KEYWORDS.stream().anyMatch(lowerKey::contains)) {
+            throw new IllegalArgumentException("Context option '" + key + "' is not allowed: it would override the host-access or class-loading restrictions already enforced by this task. Remove it from `options`; these restrictions are permanent and cannot be overridden.");
+        }
     }
 
     protected Value getBindings(Context context, String languageId) {
         return context.getBindings(languageId);
     }
 
+    /**
+     * Whether this language needs GraalVM's engine-wide native-access grant, e.g. Python's C-extension
+     * stdlib modules (ssl, sqlite3, lzma).
+     * <p>
+     * GraalVM's {@code allowNativeAccess} is an all-or-nothing switch: there is no finer-grained polyglot
+     * API to grant native access to GraalVM's own bundled C-extension loader while denying it to
+     * guest-script code that reaches for raw native FFI directly (e.g. a Python script calling
+     * {@code ctypes.CDLL(None).system(...)}). Neither {@code SandboxPolicy} (a coarse
+     * TRUSTED/CONSTRAINED/ISOLATED/UNTRUSTED build-time check, not a runtime restriction), GraalPy's
+     * {@code python.NativeModules} option (still refuses to run any C extension at all when native access
+     * is disallowed), nor Python-level mitigations (poisoning {@code sys.modules} entries is trivially
+     * undone by guest code with `del sys.modules[...]`; GraalPy 24.2.2's {@code sys.addaudithook} is a
+     * documented-but-unimplemented no-op -- verified by decompiling {@code SysModuleBuiltins} and
+     * confirming both {@code AuditNode.doAudit} and {@code SysAuditHookNode.doAudit} return immediately
+     * without recording or invoking any hook) offer a way to scope this down further. Languages that
+     * enable this therefore run scripts with a trust requirement at least as strict as Kestra assumes for
+     * {@code Script}/{@code Shell} tasks: not for arbitrary, adversarial, untrusted input as code. Unlike
+     * those tasks, which typically execute in an isolated container or process via a {@code TaskRunner},
+     * this code runs inline in the worker JVM process itself, so native code reached this way has direct
+     * access to the worker's own memory, file descriptors, and any secrets or other task state resident in
+     * that JVM -- a materially larger blast radius than an isolated container escape. See the
+     * {@code @Schema} description on the affected tasks for the user-facing disclosure of this tradeoff.
+     * <p>
+     * What native access does <em>not</em> unlock on its own is OS process creation: GraalPy's default
+     * ("java"/emulated) POSIX backend routes {@code os.system}/{@code subprocess} through
+     * {@code TruffleLanguage.Env#newProcessBuilder}, which is gated by the separate
+     * {@code allowCreateProcess} context flag (kept {@code false} in {@link #buildContext}, verified
+     * experimentally to still block both even with native access on). Only guest code that reaches native
+     * libc functions directly (ctypes) bypasses that control, since it never goes through Truffle's
+     * process API at all.
+     */
+    protected boolean allowNativeAccess() {
+        return false;
+    }
+
     protected Context.Builder contextBuilder(RunContext runContext) {
-        return Context.newBuilder();
+        return Context.newBuilder().allowIO(IOAccess.ALL);
     }
 
     // initialization-on-demand holder idiom
     private static class EngineHolder {
-        static final Engine INSTANCE = Engine.create();
+        static final Engine INSTANCE = createEngine();
+
+        private static Engine createEngine() {
+            // GraalPy/TruffleRuby extract their stdlib to this cache directory on first use. If it's
+            // unset, the default is a user home directory (~/.cache/org.graalvm.polyglot) that may be
+            // unwritable, wiped, or corrupted in rootless / distributed deployments (issue #40). Default
+            // it to a writable path under java.io.tmpdir, but never override an operator-set value.
+            if (System.getProperty("polyglot.engine.userResourceCache") == null
+                    && System.getProperty("polyglot.engine.resourcePath") == null) {
+                // Unique per-process directory name (PID) so no other local user/process on a shared
+                // host can predict, pre-create, or plant tampered resources at this path before this JVM
+                // does (CWE-377): Files.createDirectories() succeeds on an already-existing directory, so
+                // a fixed shared name would let an attacker-owned or -poisoned dir be silently adopted.
+                var cacheDir = Path.of(
+                    System.getProperty("java.io.tmpdir"),
+                    "kestra-graalvm-resource-cache-" + ProcessHandle.current().pid()
+                );
+                try {
+                    var fileStore = Files.getFileStore(cacheDir.getParent());
+                    if (fileStore.supportsFileAttributeView(PosixFileAttributeView.class)) {
+                        Files.createDirectories(cacheDir, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+                    } else {
+                        Files.createDirectories(cacheDir);
+                    }
+                    System.setProperty("polyglot.engine.userResourceCache", cacheDir.toString());
+                } catch (IOException e) {
+                    // Do NOT throw from a static field initializer: per JLS class-initialization
+                    // semantics, an exception here would poison this holder class for the entire JVM
+                    // lifetime, turning every subsequent call into a NoClassDefFoundError instead of the
+                    // original exception -- a transient tmpdir permission issue on worker boot would
+                    // become a permanent outage for every GraalVM script task until process restart.
+                    // Fall back to GraalVM's own default resource-cache resolution instead: issue #40 may
+                    // resurface, but only in this specific failure mode, which is strictly better than a
+                    // total, unrecoverable outage.
+                    LOG.warn("Unable to create a writable GraalVM resource cache directory at '{}'; falling back to GraalVM's default resource cache resolution, which may be unwritable in rootless or distributed deployments (see issue #40)", cacheDir, e);
+                }
+            }
+
+            return Engine.create();
+        }
     }
 
     private Engine getEngine() {

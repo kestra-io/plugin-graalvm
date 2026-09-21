@@ -15,7 +15,6 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.Context;
 import org.graalvm.python.embedding.GraalPyResources;
-import org.graalvm.python.embedding.VirtualFileSystem;
 
 import java.io.File;
 import java.net.URI;
@@ -33,7 +32,7 @@ import static io.kestra.core.utils.Rethrow.throwBiConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline Python with GraalVM",
-    description = "Runs inline Python inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them. Allows file I/O and host class access restricted to `java.*` and `io.kestra.core.models.*`. Optional `modules` preload Python files from content or `kestra://` URIs onto the module path."
+    description = "Runs inline Python inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them. Allows file I/O and host class access restricted to `java.*` and `io.kestra.core.models.*`. Optional `modules` preload Python files from content or `kestra://` URIs onto the module path. Supports C-extension-backed stdlib modules such as `ssl`, `sqlite3`, and `lzma`, which requires enabling native access at the GraalVM engine level. Standard OS process APIs (`os.system`, `subprocess`) stay blocked, but this grant cannot be scoped down further: a script that reaches native code directly (e.g. `ctypes`) can still execute arbitrary OS commands or manipulate process memory. Unlike Kestra's `Script`/`Shell` tasks, which typically run in an isolated container or process via a `TaskRunner`, this code runs inline in the worker JVM process itself, so it has direct access to the worker process's own memory, file descriptors, and any secrets or other task state resident in that JVM. Only run scripts from users already trusted with the flow's credentials and infrastructure, as with any script task."
 )
 @Plugin(
     examples = {
@@ -166,5 +165,10 @@ public class Eval extends AbstractEval {
         } else {
             return GraalPyResources.contextBuilder(runContext.workingDir().resolve(MODULE_PATH));
         }
+    }
+
+    @Override
+    protected boolean allowNativeAccess() {
+        return true;
     }
 }
