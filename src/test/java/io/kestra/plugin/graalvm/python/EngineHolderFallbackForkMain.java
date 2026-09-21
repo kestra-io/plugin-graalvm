@@ -5,12 +5,21 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.micronaut.context.ApplicationContext;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+
 /**
- * Standalone entry point launched in a forked JVM by {@link EvalTest} with {@code java.io.tmpdir}
- * pointed at a regular file (not a directory), forcing {@code Files.createDirectories(cacheDir)} to
- * fail inside {@code AbstractScript.EngineHolder.createEngine()}'s static field initializer. A
- * same-JVM test cannot verify this: the shared GraalVM {@code Engine} is a one-time static holder,
- * so the failure must be injected before any GraalVM class loads.
+ * Standalone entry point launched in a forked JVM by {@link EvalTest}, with the resource-cache
+ * directory's exact path (which is now PID-suffixed, see {@code AbstractScript.EngineHolder})
+ * pre-occupied by a regular file, forcing {@code Files.createDirectories(cacheDir)} to fail inside
+ * {@code AbstractScript.EngineHolder.createEngine()}'s static field initializer. A same-JVM test
+ * cannot verify this: the shared GraalVM {@code Engine} is a one-time static holder, so the failure
+ * must be injected before any GraalVM class loads. Since the PID is only known once this process has
+ * started, {@code args[0]} is a "go" marker file: this main waits for it to appear before touching any
+ * GraalVM class, giving the parent test time to read {@code ProcessHandle.pid()} and create the
+ * colliding file at the real, now-known path.
  * <p>
  * Runs two scripts back to back: if the caught {@code IOException} were rethrown from the static
  * initializer instead of being logged and swallowed, the first {@code Eval.run()} would already fail
@@ -28,6 +37,8 @@ public class EngineHolderFallbackForkMain {
         // would otherwise keep this forked JVM alive indefinitely. Force termination either way so
         // the parent test's bounded wait never has to rely on that shutdown behavior.
         try {
+            awaitGoSignal(Path.of(args[0]));
+
             try (ApplicationContext applicationContext = ApplicationContext.run()) {
                 RunContextFactory runContextFactory = applicationContext.getBean(RunContextFactory.class);
 
@@ -47,6 +58,16 @@ public class EngineHolderFallbackForkMain {
         } catch (Throwable t) {
             t.printStackTrace();
             System.exit(1);
+        }
+    }
+
+    private static void awaitGoSignal(Path goFile) throws InterruptedException {
+        var deadline = Instant.now().plus(Duration.ofSeconds(30));
+        while (!Files.exists(goFile)) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new IllegalStateException("Timed out waiting for go-signal file: " + goFile);
+            }
+            Thread.sleep(20);
         }
     }
 }

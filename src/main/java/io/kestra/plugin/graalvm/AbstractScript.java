@@ -18,6 +18,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -196,9 +198,21 @@ abstract class AbstractScript extends Task {
             // it to a writable path under java.io.tmpdir, but never override an operator-set value.
             if (System.getProperty("polyglot.engine.userResourceCache") == null
                     && System.getProperty("polyglot.engine.resourcePath") == null) {
-                var cacheDir = Path.of(System.getProperty("java.io.tmpdir"), "kestra-graalvm-resource-cache");
+                // Unique per-process directory name (PID) so no other local user/process on a shared
+                // host can predict, pre-create, or plant tampered resources at this path before this JVM
+                // does (CWE-377): Files.createDirectories() succeeds on an already-existing directory, so
+                // a fixed shared name would let an attacker-owned or -poisoned dir be silently adopted.
+                var cacheDir = Path.of(
+                    System.getProperty("java.io.tmpdir"),
+                    "kestra-graalvm-resource-cache-" + ProcessHandle.current().pid()
+                );
                 try {
-                    Files.createDirectories(cacheDir);
+                    var fileStore = Files.getFileStore(cacheDir.getParent());
+                    if (fileStore.supportsFileAttributeView(PosixFileAttributeView.class)) {
+                        Files.createDirectories(cacheDir, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+                    } else {
+                        Files.createDirectories(cacheDir);
+                    }
                     System.setProperty("polyglot.engine.userResourceCache", cacheDir.toString());
                 } catch (IOException e) {
                     // Do NOT throw from a static field initializer: per JLS class-initialization

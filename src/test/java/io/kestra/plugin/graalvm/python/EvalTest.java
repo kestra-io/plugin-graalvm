@@ -142,6 +142,42 @@ class EvalTest {
     }
 
     @Test
+    void runFunctionWithModuleAndHostFileWrite() throws Exception {
+        // Regression test: Eval#contextBuilder() takes a different path when `modules` is set
+        // (GraalPyResources.contextBuilder(Path) instead of AbstractScript's default
+        // Context.newBuilder().allowIO(IOAccess.ALL)). Proves host file I/O still works when combined
+        // with `modules`, i.e. GraalPyResources.contextBuilder(Path) grants the same IOAccess.ALL.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .modules(Property.ofValue(
+                Map.of("hello.py", """
+                    def hello(name):
+                      return "Hello " + name
+                    """)
+            ))
+            .script(Property.ofValue(
+                """
+                    import hello
+                    import java.io.FileOutputStream as FileOutputStream
+                    tempFile = runContext.workingDir().createTempFile().toFile()
+                    output = FileOutputStream(tempFile)
+                    output.write(hello.hello("Kestra").encode('utf-8'))
+                    output.close()
+                    out = runContext.storage().putFile(tempFile)
+                    """
+            ))
+            .outputs(Property.ofValue(List.of("out")))
+            .build();
+
+        var runOutput = task.run(runContext);
+        assertThat(runOutput, notNullValue());
+        assertThat(((URI) runOutput.getOutputs().get("out")).toString(), startsWith("kestra:///"));
+    }
+
+    @Test
     void stdlibImports() throws Exception {
         RunContext runContext = runContextFactory.of();
 
@@ -176,33 +212,54 @@ class EvalTest {
     @Test
     void engineHolderFallsBackWhenResourceCacheDirIsUnwritable(@TempDir Path tempDir) throws Exception {
         // Forces Files.createDirectories(cacheDir) to fail inside EngineHolder.createEngine()'s static
-        // field initializer by pre-creating "<tmpdir>/kestra-graalvm-resource-cache" as a regular file
-        // instead of a directory, so that exact subdirectory can never be created. java.io.tmpdir itself
-        // stays a real, writable directory so unrelated JVM startup machinery (e.g. Flight Recorder) is
-        // unaffected. The forked main runs two scripts back to back: if the caught IOException were
-        // rethrown instead of logged and swallowed, the static holder would be poisoned for the rest of
-        // the JVM's lifetime (JLS class-initialization semantics), and even the second script would fail
-        // with NoClassDefFoundError instead of the original exception.
-        Files.createFile(tempDir.resolve("kestra-graalvm-resource-cache"));
+        // field initializer by pre-creating the exact cache dir path as a regular file. The cache dir
+        // name is now PID-suffixed (CWE-377 fix: unpredictable ahead of the forked process starting), so
+        // the colliding file can only be created once the real PID is known -- the forked main therefore
+        // waits for a "go" marker file (args[0]) before touching any GraalVM class, giving this test time
+        // to read the child's PID and create the collision at the exact path EngineHolder will compute.
+        // java.io.tmpdir itself is left untouched (real, writable) so unrelated JVM startup machinery
+        // (e.g. Flight Recorder, which writes directly under java.io.tmpdir) is unaffected -- only that
+        // one specific path collides. The forked main runs two scripts back to back: if the caught
+        // IOException were rethrown instead of logged and swallowed, the static holder would be poisoned
+        // for the rest of the JVM's lifetime (JLS class-initialization semantics), and even the second
+        // script would fail with NoClassDefFoundError instead of the original exception.
+        Path goFile = tempDir.resolve("go-signal");
 
         runForked(
             List.of("-Djava.io.tmpdir=" + tempDir),
             EngineHolderFallbackForkMain.class,
-            EngineHolderFallbackForkMain.SUCCESS_MARKER
+            EngineHolderFallbackForkMain.SUCCESS_MARKER,
+            List.of(goFile.toString()),
+            pid -> {
+                Files.createFile(tempDir.resolve("kestra-graalvm-resource-cache-" + pid));
+                Files.createFile(goFile);
+            }
         );
     }
 
     private void runForked(List<String> jvmArgs, Class<?> mainClass, String successMarker) throws Exception {
+        runForked(jvmArgs, mainClass, successMarker, List.of(), pid -> { });
+    }
+
+    private void runForked(
+        List<String> jvmArgs,
+        Class<?> mainClass,
+        String successMarker,
+        List<String> programArgs,
+        ThrowingLongConsumer onPidAvailable
+    ) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
         command.addAll(jvmArgs);
         command.add("-cp");
         command.add(System.getProperty("java.class.path"));
         command.add(mainClass.getName());
+        command.addAll(programArgs);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command).redirectErrorStream(true);
         processBuilder.environment().remove("XDG_CACHE_HOME");
         Process process = processBuilder.start();
+        onPidAvailable.accept(process.pid());
 
         var output = new StringBuilder();
         Thread outputReader = Thread.ofVirtual().start(() -> {
@@ -304,5 +361,10 @@ class EvalTest {
 
         var runOutput = task.run(runContext);
         assertThat(runOutput.getOutputs().get("result"), is(0));
+    }
+
+    @FunctionalInterface
+    private interface ThrowingLongConsumer {
+        void accept(long value) throws IOException;
     }
 }
