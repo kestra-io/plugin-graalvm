@@ -5,10 +5,16 @@ import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import jakarta.inject.Inject;
+import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -70,6 +76,134 @@ class EvalTest {
         assertThrows(Exception.class, () -> task.run(runContext));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "java.io.File", "java.io.FileInputStream", "java.io.FileOutputStream", "java.io.FileReader",
+        "java.io.FileWriter", "java.io.RandomAccessFile", "java.io.PrintStream", "java.io.PrintWriter",
+        "java.util.Formatter", "java.util.zip.ZipFile", "java.util.jar.JarFile", "java.util.logging.FileHandler",
+        "java.nio.file.Files", "java.nio.file.Path", "java.nio.file.Paths", "java.nio.file.FileSystems",
+        "java.nio.channels.FileChannel", "java.lang.foreign.Linker", "java.lang.management.ManagementFactory",
+        "java.util.prefs.Preferences", "java.beans.XMLDecoder", "java.beans.Statement", "java.beans.Expression",
+        "java.sql.DriverManager", "java.lang.ModuleLayer", "java.lang.Module", "java.lang.module.ModuleFinder",
+        "java.util.ServiceLoader"
+    })
+    void denyFileAccessClassLookup(String className) {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("Java.type('%s')".formatted(className));
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        // Path/File from Kestra APIs must stay opaque
+        "runContext.workingDir().path().resolve('../..').toString()",
+        "runContext.workingDir().path().getFileSystem()",
+        "runContext.workingDir().createTempFile().toFile().getParentFile()",
+        "runContext.workingDir().createTempFile().toFile().getPath()"
+    })
+    void denyFileAccessThroughKestraPaths(String script) {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf(script);
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyAddingJarToClasspath() throws Exception {
+        // a jar written to the working dir would otherwise run as unrestricted host code
+        RunContext runContext = runContextFactory.of();
+        try (var jar = new java.util.jar.JarOutputStream(Files.newOutputStream(runContext.workingDir().path().resolve("evil.jar")))) {
+            jar.putNextEntry(new java.util.zip.ZipEntry("empty.txt"));
+        }
+
+        var exception = assertThrows(PolyglotException.class, () -> evalOf("Java.addToClasspath('evil.jar')").run(runContext));
+        assertThat(exception.getMessage(), containsString("not allowed"));
+    }
+
+    @Test
+    void denyFileUrlFromKestraUri(@TempDir Path outsideDir) throws Exception {
+        // a URI returned by a Kestra API must not open a file: URL on the host
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("""
+            var ByteArrayInputStream = Java.type('java.io.ByteArrayInputStream');
+            var bytes = Java.type('java.nio.charset.StandardCharsets').UTF_8.encode('x');
+            var uri = runContext.storage().putFile(new ByteArrayInputStream(bytes.array(), 0, bytes.limit()), 'x.txt');
+            uri.resolve('%s').toURL().openStream().read()""".formatted(secret.toUri()));
+
+        assertThrows(PolyglotException.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyHeapDumpThroughManagementBeans() {
+        // dumpHeap can write the JVM heap to any path
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("""
+            var server = Java.type('java.lang.management.ManagementFactory').getPlatformMBeanServer();
+            var name = Array.from(server.queryNames(null, null)).find(n => n.toString().includes('HotSpotDiagnostic'));
+            server.invoke(name, 'dumpHeap', ['/tmp/kestra-heap.hprof', true], ['java.lang.String', 'boolean']);""");
+        assertThrows(Exception.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void writesOutputFileWithoutFileClasses() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("""
+                var ByteArrayInputStream = Java.type('java.io.ByteArrayInputStream');
+                var StandardCharsets = Java.type('java.nio.charset.StandardCharsets');
+                var bytes = StandardCharsets.UTF_8.encode('Hello World');
+                var out = runContext.storage().putFile(new ByteArrayInputStream(bytes.array(), 0, bytes.limit()), 'out.txt');
+                ({out: out})"""))
+            .outputs(Property.ofValue(List.of("out")))
+            .build();
+
+        var out = (URI) task.run(runContext).getOutputs().get("out");
+
+        assertThat(out.toString(), startsWith("kestra:///"));
+        try (var stream = runContext.storage().getFile(out)) {
+            assertThat(new String(stream.readAllBytes()), is("Hello World"));
+        }
+    }
+
+    // load() is the only GraalJS builtin that reads files
+
+    @Test
+    void loadsCodeFromInsideWorkingDir() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        Files.writeString(runContext.workingDir().path().resolve("helper.js"), "var helper = 'hello';");
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("load('helper.js'); ({content: helper})"))
+            .outputs(Property.ofValue(List.of("content")))
+            .build();
+
+        var runOutput = task.run(runContext);
+
+        assertThat(runOutput.getOutputs().get("content"), is("hello"));
+    }
+
+    @Test
+    void loadingCodeFromOutsideWorkingDirIsDenied(@TempDir Path outsideDir) throws Exception {
+        var evil = Files.writeString(outsideDir.resolve("evil.js"), "throw new Error('pwned');");
+        RunContext runContext = runContextFactory.of();
+        Files.createSymbolicLink(runContext.workingDir().path().resolve("link.js"), evil);
+        Files.createSymbolicLink(runContext.workingDir().path().resolve("linkDir"), outsideDir);
+
+        assertLoadDenied(runContext, "load('%s')".formatted(evil));
+        assertLoadDenied(runContext, "load('" + "../".repeat(30) + evil.toRealPath().toString().substring(1) + "')");
+        assertLoadDenied(runContext, "load('link.js')");
+        assertLoadDenied(runContext, "load('linkDir/evil.js')");
+    }
+
+    private void assertLoadDenied(RunContext runContext, String script) {
+        var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+    }
+
     @Test
     void runValue() throws Exception {
         RunContext runContext = runContextFactory.of();
@@ -119,17 +253,16 @@ class EvalTest {
                 """
                     (function() {
                     var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
-                    var File = Java.type('java.io.File');
-                    var FileOutputStream = Java.type('java.io.FileOutputStream');
+                    var ByteArrayInputStream = Java.type('java.io.ByteArrayInputStream');
+                    var StandardCharsets = Java.type('java.nio.charset.StandardCharsets');
 
                     runContext.metric(Counter.of('total', 666, 'name', 'bla'));
 
                     map = {'test': 'here'};
-                    var tempFile = runContext.workingDir().createTempFile().toFile();
-                    var output = new FileOutputStream(tempFile);
-                    output.write(256);
+                    var bytes = StandardCharsets.UTF_8.encode('Hello World');
+                    var content = new ByteArrayInputStream(bytes.array(), 0, bytes.limit());
 
-                    out = runContext.storage().putFile(tempFile);
+                    out = runContext.storage().putFile(content, 'out.txt');
                     return {"map": map, "out": out};
                     })"""
             ))

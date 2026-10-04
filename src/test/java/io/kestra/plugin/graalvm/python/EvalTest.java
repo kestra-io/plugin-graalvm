@@ -4,24 +4,20 @@ import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
+import io.kestra.plugin.graalvm.ForkedJvm;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -91,17 +87,14 @@ class EvalTest {
             .script(Property.ofValue(
                 """
                     import java
-                    import java.io.File as File
-                    import java.io.FileOutputStream as FileOutputStream
+                    import java.io.ByteArrayInputStream as ByteArrayInputStream
                     # types other than one coming from the Java SDK must be defined this way
                     Counter = java.type("io.kestra.core.models.executions.metrics.Counter")
                     logger.info('Task started')
                     runContext.metric(Counter.of('total', 666, 'name', 'bla'))
                     map = {'test': 'here'}
-                    tempFile = runContext.workingDir().createTempFile().toFile()
-                    output = FileOutputStream(tempFile)
-                    output.write(256)
-                    out = runContext.storage().putFile(tempFile)
+                    content = ByteArrayInputStream('Hello World'.encode('utf-8'))
+                    out = runContext.storage().putFile(content, 'out.txt')
                     """
             ))
             .outputs(Property.ofValue(List.of("map", "out")))
@@ -142,11 +135,10 @@ class EvalTest {
     }
 
     @Test
-    void runFunctionWithModuleAndHostFileWrite() throws Exception {
+    void runFunctionWithModuleAndFileWrite() throws Exception {
         // Regression test: Eval#contextBuilder() takes a different path when `modules` is set
-        // (GraalPyResources.contextBuilder(Path) instead of AbstractScript's default
-        // Context.newBuilder().allowIO(IOAccess.ALL)). Proves host file I/O still works when combined
-        // with `modules`, i.e. GraalPyResources.contextBuilder(Path) grants the same IOAccess.ALL.
+        // (GraalPyResources.contextBuilder(Path) instead of AbstractScript's default Context.newBuilder()).
+        // Proves file I/O inside the working directory still works when combined with `modules`.
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
@@ -161,12 +153,11 @@ class EvalTest {
             .script(Property.ofValue(
                 """
                     import hello
-                    import java.io.FileOutputStream as FileOutputStream
-                    tempFile = runContext.workingDir().createTempFile().toFile()
-                    output = FileOutputStream(tempFile)
-                    output.write(hello.hello("Kestra").encode('utf-8'))
-                    output.close()
-                    out = runContext.storage().putFile(tempFile)
+                    import java.io.ByteArrayInputStream as ByteArrayInputStream
+                    with open('out.txt', 'w') as f:
+                        f.write(hello.hello("Kestra"))
+                    with open('out.txt', 'rb') as f:
+                        out = runContext.storage().putFile(ByteArrayInputStream(f.read()), 'out.txt')
                     """
             ))
             .outputs(Property.ofValue(List.of("out")))
@@ -202,7 +193,7 @@ class EvalTest {
         Path unwritableHome = tempDir.resolve("not-a-directory");
         Files.createFile(unwritableHome);
 
-        runForked(
+        ForkedJvm.run(
             List.of("-Duser.home=" + unwritableHome),
             StdlibImportForkMain.class,
             StdlibImportForkMain.SUCCESS_MARKER
@@ -225,7 +216,7 @@ class EvalTest {
         // script would fail with NoClassDefFoundError instead of the original exception.
         Path goFile = tempDir.resolve("go-signal");
 
-        runForked(
+        ForkedJvm.run(
             List.of("-Djava.io.tmpdir=" + tempDir),
             EngineHolderFallbackForkMain.class,
             EngineHolderFallbackForkMain.SUCCESS_MARKER,
@@ -235,50 +226,6 @@ class EvalTest {
                 Files.createFile(goFile);
             }
         );
-    }
-
-    private void runForked(List<String> jvmArgs, Class<?> mainClass, String successMarker) throws Exception {
-        runForked(jvmArgs, mainClass, successMarker, List.of(), pid -> { });
-    }
-
-    private void runForked(
-        List<String> jvmArgs,
-        Class<?> mainClass,
-        String successMarker,
-        List<String> programArgs,
-        ThrowingLongConsumer onPidAvailable
-    ) throws Exception {
-        List<String> command = new ArrayList<>();
-        command.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
-        command.addAll(jvmArgs);
-        command.add("-cp");
-        command.add(System.getProperty("java.class.path"));
-        command.add(mainClass.getName());
-        command.addAll(programArgs);
-
-        ProcessBuilder processBuilder = new ProcessBuilder(command).redirectErrorStream(true);
-        processBuilder.environment().remove("XDG_CACHE_HOME");
-        Process process = processBuilder.start();
-        onPidAvailable.accept(process.pid());
-
-        var output = new StringBuilder();
-        Thread outputReader = Thread.ofVirtual().start(() -> {
-            try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                reader.lines().forEach(line -> output.append(line).append('\n'));
-            } catch (IOException ignored) {
-                // stream closes when the process is destroyed below; nothing to recover
-            }
-        });
-
-        boolean completed = process.waitFor(90, TimeUnit.SECONDS);
-        if (!completed) {
-            process.destroyForcibly();
-        }
-        outputReader.join(java.time.Duration.ofSeconds(5).toMillis());
-
-        assertThat("forked JVM did not complete in time, output so far:\n" + output, completed, is(true));
-        assertThat(output.toString(), containsString(successMarker));
-        assertThat(process.exitValue(), is(0));
     }
 
     @Test
@@ -317,21 +264,103 @@ class EvalTest {
     }
 
     @Test
-    void blocksSubprocessDespiteNativeAccess() {
+    void blocksSubprocessDespiteNativeAccess() throws IOException {
         // Same boundary as blocksOsSystemDespiteNativeAccess() above, exercised through subprocess
         // instead of os.system: subprocess.run() also goes through the emulated POSIX backend's
         // fork_exec, which ultimately hits the same allowCreateProcess-gated Env#newProcessBuilder call
         // and fails, surfaced to the script as a PermissionError.
+        // copied into the working dir, otherwise the file system rejects /bin/echo before process creation
+        RunContext runContext = runContextFactory.of();
+        var echo = Files.copy(Path.of("/bin/echo"), runContext.workingDir().path().resolve("echo"));
+        assertThat(echo.toFile().setExecutable(true), is(true));
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("import subprocess\nsubprocess.run(['./echo', 'pwned'], capture_output=True)\n"))
+            .build();
+
+        var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), containsString("not permitted"));
+    }
+
+    @Test
+    void guestFileAccessInsideWorkingDir() throws Exception {
+        RunContext runContext = runContextFactory.of();
+
+        var runOutput = evalOf("""
+            import os
+            import tempfile
+            with open('data.txt', 'w') as f:
+                f.write('hello')
+            os.makedirs('nested/dir')
+            with open('nested/dir/../../data.txt') as f:
+                content = f.read()
+            with tempfile.NamedTemporaryFile('w', delete=False) as tmp:
+                tmp.write('temp')
+            files = sorted(os.listdir('.'))
+            """, "content", "files").run(runContext);
+
+        assertThat(runOutput.getOutputs().get("content"), is("hello"));
+        assertThat(Files.readString(runContext.workingDir().path().resolve("data.txt")), is("hello"));
+    }
+
+    @Test
+    void guestFileAccessOutsideWorkingDirIsDenied(@TempDir Path outsideDir) throws Exception {
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+
+        assertFileAccessDenied("open('%s').read()".formatted(secret));
+        assertFileAccessDenied("open('%s', 'w').write('x')".formatted(outsideDir.resolve("created.txt")));
+        assertFileAccessDenied("import os\nos.listdir('%s')".formatted(outsideDir));
+        assertFileAccessDenied("open('" + "../".repeat(30) + "etc/hosts').read()");
+        assertThat(Files.exists(outsideDir.resolve("created.txt")), is(false));
+    }
+
+    @Test
+    void guestFileAccessThroughSymbolicLinkOutsideIsDenied(@TempDir Path outsideDir) throws Exception {
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+        RunContext runContext = runContextFactory.of();
+        Files.createSymbolicLink(runContext.workingDir().path().resolve("link.txt"), secret);
+        Files.createSymbolicLink(runContext.workingDir().path().resolve("linkDir"), outsideDir);
+
+        assertFileAccessDenied(runContext, "open('link.txt').read()");
+        assertFileAccessDenied(runContext, "open('linkDir/secret.txt').read()");
+        assertFileAccessDenied(runContext, "import os\nos.symlink('%s', 'newLink')".formatted(secret));
+    }
+
+    @Test
+    void guestFileAccessOutsideWorkingDirIsDeniedWithModules(@TempDir Path outsideDir) throws Exception {
+        // GraalPyResources.contextBuilder() sets its own IOAccess
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
         RunContext runContext = runContextFactory.of();
 
         Eval task = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())
-            .script(Property.ofValue("import subprocess\nsubprocess.run(['echo', 'pwned'], capture_output=True)\n"))
+            .modules(Property.ofValue(Map.of("hello.py", "def hello():\n  return 'hello'\n")))
+            .script(Property.ofValue("import hello\nopen('%s').read()\n".formatted(secret)))
             .build();
 
         var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
-        assertThat(exception.getMessage(), containsString("not permitted"));
+        assertThat(exception.getMessage(), startsWith("PermissionError"));
+    }
+
+    private Eval evalOf(String script, String... outputs) {
+        return Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue(script))
+            .outputs(Property.ofValue(List.of(outputs)))
+            .build();
+    }
+
+    private void assertFileAccessDenied(String script) {
+        assertFileAccessDenied(runContextFactory.of(), script);
+    }
+
+    private void assertFileAccessDenied(RunContext runContext, String script) {
+        var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext));
+        assertThat(exception.getMessage(), startsWith("PermissionError"));
     }
 
     @Test
@@ -361,10 +390,5 @@ class EvalTest {
 
         var runOutput = task.run(runContext);
         assertThat(runOutput.getOutputs().get("result"), is(0));
-    }
-
-    @FunctionalInterface
-    private interface ThrowingLongConsumer {
-        void accept(long value) throws IOException;
     }
 }
