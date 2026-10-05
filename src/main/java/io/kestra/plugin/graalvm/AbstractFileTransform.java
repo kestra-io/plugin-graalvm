@@ -22,6 +22,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.io.*;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -148,16 +149,21 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             bindings.putMember("runContext", new RunContextProxy(runContext));
             bindings.putMember("logger", runContext.logger());
             bindings.putMember("row", row);
+            // bindings outlive a single row, so rows set while processing a previous row must not leak into this one;
+            // it is reset rather than removed because a JavaScript `var rows` cannot be deleted from the global object
+            bindings.putMember("rows", null);
 
-            var result = context.eval(scripts);
-            if (result.hasMember("rows")) {
-                return Flux.create(emitter -> {
-                    var array = result.getMember("rows");
-                    for (int i = 0; i < array.getArraySize(); i++) {
-                        emitter.next(array.getArrayElement(i));
-                    }
-                    emitter.complete();
-                });
+            context.eval(scripts);
+            var rows = bindings.getMember("rows");
+            if (rows != null && !rows.isNull()) {
+                if (!rows.hasArrayElements()) {
+                    throw new IllegalArgumentException("`rows` must be a list of rows");
+                }
+                var converted = new ArrayList<Object>((int) rows.getArraySize());
+                for (long i = 0; i < rows.getArraySize(); i++) {
+                    converted.add(rows.getArrayElement(i).as(Object.class));
+                }
+                return Flux.fromIterable(converted);
             }
 
             if (bindings.hasMember("row")) {
