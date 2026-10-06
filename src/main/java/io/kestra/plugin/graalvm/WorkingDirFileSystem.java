@@ -7,24 +7,36 @@ import java.net.URI;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 // Restricts guest file access to the task working directory, resolving symlinks before checking paths.
 // Guest code cannot create symlinks, so it cannot swap one in between the check and the file operation.
 public final class WorkingDirFileSystem implements FileSystem {
     private static final String TEMP_DIRECTORY_NAME = ".tmp";
     // same as Linux MAXSYMLINKS
-    private static final int MAX_DANGLING_LINKS = 40;
+    private static final int MAX_SYMBOLIC_LINKS = 40;
 
     private final FileSystem delegate = FileSystem.newDefaultFileSystem();
     private final Path root;
+    // paths visited to resolve the working dir as given, which may go through host symlinks such as
+    // /var -> /private/var on macOS; chosen by the host, not the script, so probing them reveals nothing
+    private final Set<Path> pathsToRoot = new HashSet<>();
     private volatile Path currentWorkingDirectory;
 
     WorkingDirFileSystem(Path workingDirectory) throws IOException {
         this.root = workingDirectory.toRealPath();
+        for (var ancestor = root; ancestor != null; ancestor = ancestor.getParent()) {
+            pathsToRoot.add(ancestor);
+        }
+        walk(workingDirectory, workingDirectory.toAbsolutePath(), true, pathsToRoot::add);
         this.currentWorkingDirectory = this.root;
     }
 
@@ -185,61 +197,81 @@ public final class WorkingDirFileSystem implements FileSystem {
     }
 
     private Path resolveFollow(Path path) throws IOException {
-        return checkInsideRoot(path, realPath(path, toAbsolutePath(path), 0));
-    }
-
-    // not checked against the root, so the working dir's own parent can be resolved too
-    private Path realPath(Path original, Path absolute, int danglingLinksFollowed) throws IOException {
-        var existing = absolute;
-        while (existing != null) {
-            Path real;
-            try {
-                real = existing.toRealPath();
-            } catch (NoSuchFileException e) {
-                if (Files.isSymbolicLink(existing)) {
-                    // the OS would follow a dangling link on create, so resolve it too
-                    if (danglingLinksFollowed >= MAX_DANGLING_LINKS) {
-                        throw new FileSystemException(original.toString(), null, "Too many levels of symbolic links");
-                    }
-                    var target = existing.resolveSibling(Files.readSymbolicLink(existing));
-                    return realPath(original, target.resolve(remainder(existing, absolute)), danglingLinksFollowed + 1);
-                }
-                existing = existing.getParent();
-                continue;
-            }
-            var missing = remainder(existing, absolute);
-            // like the OS, never go back up through a missing directory: .. would be resolved as text
-            for (var name : missing) {
-                if (name.toString().equals("..")) {
-                    throw new NoSuchFileException(original.toString());
-                }
-            }
-            return real.resolve(missing).normalize();
-        }
-        throw deny(original);
+        return realPath(path, true);
     }
 
     private Path resolveNoFollow(Path path) throws IOException {
-        var absolute = toAbsolutePath(path).normalize();
-        var parent = absolute.getParent();
-        var fileName = absolute.getFileName();
-        if (parent == null || fileName == null) {
-            throw deny(path);
-        }
-        return checkInsideRoot(path, realPath(path, parent, 0).resolve(fileName));
+        return realPath(path, false);
     }
 
-    // unlike relativize(), keeps .. as is
-    private static Path remainder(Path ancestor, Path path) {
-        var count = ancestor.getNameCount();
-        return count == path.getNameCount() ? Path.of("") : path.subpath(count, path.getNameCount());
-    }
-
-    private Path checkInsideRoot(Path original, Path resolved) {
+    // Resolves the path one name at a time like the OS, following symlinks (including dangling ones, which the
+    // OS follows on create). A name outside the working dir and the paths to it is denied before the host is
+    // touched, so errors from the host never reveal what exists outside the working directory.
+    private Path realPath(Path original, boolean followFinalLink) throws IOException {
+        var resolved = walk(original, toAbsolutePath(original), followFinalLink, candidate -> {
+            if (!candidate.startsWith(root) && !pathsToRoot.contains(candidate)) {
+                throw deny(original);
+            }
+        });
         if (!resolved.startsWith(root)) {
             throw deny(original);
         }
         return resolved;
+    }
+
+    // visit is called on each name before the host is touched for it
+    private static Path walk(Path original, Path absolute, boolean followFinalLink, Consumer<Path> visit) throws IOException {
+        var pending = new ArrayDeque<Path>();
+        absolute.forEach(pending::add);
+        var current = absolute.getRoot();
+        var currentExists = true;
+        var linksFollowed = 0;
+
+        while (!pending.isEmpty()) {
+            var name = pending.removeFirst().toString();
+            if (name.equals(".")) {
+                continue;
+            }
+            if (name.equals("..")) {
+                // like the OS, never go back up through a missing directory
+                if (!currentExists) {
+                    throw new NoSuchFileException(original.toString());
+                }
+                // current never contains a symlink, so its parent is the real parent
+                current = current.getParent() == null ? current : current.getParent();
+                continue;
+            }
+
+            var candidate = current.resolve(name);
+            visit.accept(candidate);
+            current = candidate;
+            if (!currentExists) {
+                continue;
+            }
+
+            BasicFileAttributes attributes;
+            try {
+                attributes = Files.readAttributes(candidate, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            } catch (NoSuchFileException e) {
+                currentExists = false;
+                continue;
+            }
+            if (attributes.isSymbolicLink() && (followFinalLink || !pending.isEmpty())) {
+                if (++linksFollowed > MAX_SYMBOLIC_LINKS) {
+                    throw new FileSystemException(original.toString(), null, "Too many levels of symbolic links");
+                }
+                var target = Files.readSymbolicLink(candidate);
+                var targetNames = new ArrayList<Path>();
+                target.forEach(targetNames::add);
+                for (var i = targetNames.size() - 1; i >= 0; i--) {
+                    pending.addFirst(targetNames.get(i));
+                }
+                current = target.isAbsolute() ? target.getRoot() : candidate.getParent();
+            } else if (!attributes.isDirectory() && !pending.isEmpty()) {
+                throw new NotDirectoryException(original.toString());
+            }
+        }
+        return current;
     }
 
     private void denyIfSymbolicLink(Path original, Path resolved) {

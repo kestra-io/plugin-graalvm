@@ -67,7 +67,11 @@ abstract class AbstractScript extends Task {
         "java.io.FileWriter", "java.io.RandomAccessFile", "java.io.PrintStream", "java.io.PrintWriter",
         "java.util.Formatter", "java.util.zip.ZipFile", "java.util.jar.JarFile",
         // loads code from a module layer built from a jar in the working dir
-        "java.util.ServiceLoader"
+        "java.util.ServiceLoader",
+        // deserialization resolves classes without the lookup filter, so gadget chains on the classpath could run any code
+        "java.io.ObjectInputStream",
+        // runs JDK tools such as jar and javac in the worker, which read and write any file on the host
+        "java.util.spi.ToolProvider"
     );
     private static final List<String> DENIED_HOST_PACKAGES = List.of(
         "java.lang.Process",
@@ -78,7 +82,9 @@ abstract class AbstractScript extends Task {
         // reflection inside Java (XMLDecoder, Statement) and file-based JDBC drivers
         "java.beans.", "java.sql.",
         // Module and ModuleLayer, and module finders that can load a jar from the working dir
-        "java.lang.Module", "java.lang.module."
+        "java.lang.Module", "java.lang.module.",
+        // Toolkit, Font and ImageIO-backed classes load files by name directly on the host
+        "java.awt."
     );
 
     protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException, IOException {
@@ -107,6 +113,8 @@ abstract class AbstractScript extends Task {
                     // a URI from a Kestra API could otherwise open any file: URL
                     .denyAccess(java.net.URL.class)
                     .denyAccess(java.net.URLConnection.class)
+                    // an instance obtained without a class lookup must not deserialize either
+                    .denyAccess(java.io.ObjectInputStream.class)
                     .build()
             )
             // no Java.addToClasspath(): a jar written to the working dir would run as unrestricted host code

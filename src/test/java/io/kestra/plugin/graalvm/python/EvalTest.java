@@ -313,6 +313,10 @@ class EvalTest {
         assertFileAccessDenied("open('%s', 'w').write('x')".formatted(outsideDir.resolve("created.txt")));
         assertFileAccessDenied("import os\nos.listdir('%s')".formatted(outsideDir));
         assertFileAccessDenied("open('" + "../".repeat(30) + "etc/hosts').read()");
+        // the same error whether the outside path exists or not, so scripts cannot probe the host
+        assertFileAccessDenied("import os\nos.stat('%s')".formatted(secret.resolve("x")));
+        assertFileAccessDenied("import os\nos.stat('%s')".formatted(outsideDir.resolve("missing/x")));
+        assertFileAccessDenied("import os\nos.stat('%s')".formatted(outsideDir.resolve("missing/../secret.txt")));
         assertThat(Files.exists(outsideDir.resolve("created.txt")), is(false));
     }
 

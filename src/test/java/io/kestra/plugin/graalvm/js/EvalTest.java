@@ -85,7 +85,8 @@ class EvalTest {
         "java.nio.channels.FileChannel", "java.lang.foreign.Linker", "java.lang.management.ManagementFactory",
         "java.util.prefs.Preferences", "java.beans.XMLDecoder", "java.beans.Statement", "java.beans.Expression",
         "java.sql.DriverManager", "java.lang.ModuleLayer", "java.lang.Module", "java.lang.module.ModuleFinder",
-        "java.util.ServiceLoader"
+        "java.util.ServiceLoader", "java.io.ObjectInputStream", "java.awt.Toolkit", "java.awt.Font",
+        "java.awt.image.PixelGrabber", "java.util.spi.ToolProvider"
     })
     void denyFileAccessClassLookup(String className) {
         RunContext runContext = runContextFactory.of();
@@ -131,6 +132,21 @@ class EvalTest {
             uri.resolve('%s').toURL().openStream().read()""".formatted(secret.toUri()));
 
         assertThrows(PolyglotException.class, () -> task.run(runContext));
+    }
+
+    @Test
+    void denyJdkToolsWritingOutside(@TempDir Path outsideDir) throws Exception {
+        // the jar tool runs in the worker and writes to any path without going through the guest file system
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+        var target = outsideDir.resolve("escaped.jar");
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("""
+            var tool = Java.type('java.util.spi.ToolProvider').findFirst('jar').get();
+            tool['run(java.io.PrintWriter,java.io.PrintWriter,java.lang.String[])'](null, null, ['cf', '%s', '-C', '%s', '%s']);"""
+            .formatted(target, outsideDir, secret.getFileName()));
+
+        assertThrows(PolyglotException.class, () -> task.run(runContext));
+        assertThat(Files.exists(target), is(false));
     }
 
     @Test

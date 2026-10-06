@@ -84,6 +84,49 @@ class WorkingDirFileSystemTest {
     }
 
     @Test
+    void deniesProbingWhatExistsOutside() {
+        // the same denial whether the outside path exists, is missing, or is a file used as a directory
+        assertThrows(SecurityException.class, () -> read(outside.resolve("x")));
+        assertThrows(SecurityException.class, () -> read(tempDir.resolve("missing/x")));
+        assertThrows(SecurityException.class, () -> read(tempDir.resolve("missing/../secret.txt")));
+        assertThrows(SecurityException.class, () -> fs.readAttributes(Path.of("../secret.txt/x"), "basic:size"));
+        assertThrows(SecurityException.class, () -> fs.readAttributes(Path.of("../missing/../workingDir"), "basic:size"));
+    }
+
+    @Test
+    void acceptsWorkingDirGivenThroughSymbolicLink() throws IOException {
+        // Kestra may pass a path through a host symlink, such as /var -> /private/var on macOS
+        var linkedRoot = Files.createSymbolicLink(tempDir.resolve("linkedWorkingDir"), root);
+        var linkedFs = new WorkingDirFileSystem(linkedRoot);
+        linkedFs.setCurrentWorkingDirectory(linkedRoot);
+        Files.writeString(root.resolve("file.txt"), "inside");
+
+        assertThat(linkedFs.toRealPath(linkedRoot.resolve("file.txt")), is(root.resolve("file.txt")));
+        assertThat(linkedFs.toRealPath(Path.of("file.txt")), is(root.resolve("file.txt")));
+        assertThrows(SecurityException.class, () -> linkedFs.toRealPath(linkedRoot.resolveSibling("secret.txt")));
+    }
+
+    @Test
+    void deniesFileUsedAsDirectoryInside() throws IOException {
+        Files.writeString(root.resolve("file.txt"), "inside");
+
+        assertThrows(NotDirectoryException.class, () -> read(Path.of("file.txt/x")));
+        assertThrows(NotDirectoryException.class, () -> read(Path.of("file.txt/../file.txt")));
+    }
+
+    @Test
+    void resolvesDotDotAfterSymbolicLinkLikeTheOs() throws IOException {
+        // linkDir/.. is the parent of the link target, not the working dir
+        var outsideDir = Files.createDirectory(tempDir.resolve("sub"));
+        Files.createSymbolicLink(root.resolve("linkDir"), outsideDir);
+        Files.writeString(root.resolve("file.txt"), "inside");
+
+        assertThrows(SecurityException.class, () -> fs.delete(Path.of("linkDir/../file.txt")));
+        assertThrows(SecurityException.class, () -> read(Path.of("linkDir/../secret.txt")));
+        assertThat(Files.exists(root.resolve("file.txt")), is(true));
+    }
+
+    @Test
     void deniesSymbolicLinkPointingOutside() throws IOException {
         Files.createSymbolicLink(root.resolve("link.txt"), outside);
         Files.createSymbolicLink(root.resolve("linkDir"), tempDir);
