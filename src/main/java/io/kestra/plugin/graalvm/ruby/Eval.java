@@ -25,7 +25,7 @@ import org.graalvm.polyglot.Value;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline Ruby with GraalVM",
-    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them."
+    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them. The bundled standard library is read-only for scripts."
 )
 @Plugin(
     examples = {
@@ -44,17 +44,17 @@ import org.graalvm.polyglot.Value;
                           - out
                         script: |
                           Counter = Java.type('io.kestra.core.models.executions.metrics.Counter')
-                          FileOutputStream = Java.type('java.io.FileOutputStream')
+                          ByteArrayInputStream = Java.type('java.io.ByteArrayInputStream')
+                          StandardCharsets = Java.type('java.nio.charset.StandardCharsets')
                           # all variables must be imported before use
                           logger = Polyglot.import('logger')
                           runContext = Polyglot.import('runContext')
                           logger.info('Task started')
                           runContext.metric(Counter.of('total', 666, 'name', 'bla'))
                           map = {test: 'here'}
-                          tempFile = runContext.workingDir().createTempFile().toFile()
-                          output = FileOutputStream.new(tempFile)
-                          output.write('Hello World'.bytes)
-                          out = runContext.storage().putFile(tempFile)
+                          bytes = StandardCharsets.UTF_8.encode('Hello World')
+                          content = ByteArrayInputStream.new(bytes.array(), 0, bytes.limit())
+                          out = runContext.storage().putFile(content, 'out.txt')
                           return {map: map, out: out}"""
         )
     },

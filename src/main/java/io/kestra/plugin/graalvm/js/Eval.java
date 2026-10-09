@@ -43,15 +43,14 @@ import lombok.experimental.SuperBuilder;
                     script: |
                       (function() {
                         var Counter = Java.type('io.kestra.core.models.executions.metrics.Counter');
-                        var File = Java.type('java.io.File');
-                        var FileOutputStream = Java.type('java.io.FileOutputStream');
+                        var ByteArrayInputStream = Java.type('java.io.ByteArrayInputStream');
+                        var StandardCharsets = Java.type('java.nio.charset.StandardCharsets');
                         logger.info('Task started');
                         runContext.metric(Counter.of('total', 666, 'name', 'bla'));
                         map = {'test': 'here'};
-                        var tempFile = runContext.workingDir().createTempFile().toFile();
-                        var output = new FileOutputStream(tempFile);
-                        output.write([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]);
-                        out = runContext.storage().putFile(tempFile);
+                        var bytes = StandardCharsets.UTF_8.encode('Hello World');
+                        var content = new ByteArrayInputStream(bytes.array(), 0, bytes.limit());
+                        out = runContext.storage().putFile(content, 'out.txt');
                         return {"map": map, "out": out};
                       })"""
         )

@@ -7,7 +7,9 @@ import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
+import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.*;
 import io.kestra.core.serializers.FileSerde;
@@ -15,10 +17,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 public class FileTransformTest {
@@ -65,5 +71,19 @@ public class FileTransformTest {
                 assertThat(((Map<String, Object>) result.get(0)).get("title"), is("Sunita_Williams"));
             }
         }
+    }
+
+    @Test
+    void fileAccessOutsideWorkingDirIsDenied(@TempDir Path outsideDir) throws Exception {
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+
+        var fileTransform = FileTransform.builder()
+            .id("fileTransform")
+            .from(Property.ofValue("{\"title\": \"Main_Page\"}"))
+            .script(Property.ofValue("row['secret'] = open('%s').read()".formatted(secret)))
+            .build();
+
+        var exception = assertThrows(PolyglotException.class, () -> fileTransform.run(runContextFactory.of()));
+        assertThat(exception.getMessage(), startsWith("PermissionError"));
     }
 }

@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -58,7 +59,37 @@ abstract class AbstractScript extends Task {
         "hostaccess", "hostclasslookup", "hostclassloading", "hostlookup", "classloader", "classloading"
     );
 
-    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException {
+    // on top of the HostAccess denyAccess rules in buildContext()
+    private static final Set<String> DENIED_HOST_CLASSES = Set.of(
+        "java.lang.Runtime", "java.lang.System", "java.lang.Class", "java.lang.ClassLoader",
+        // these open files directly on the host, bypassing WorkingDirFileSystem
+        "java.io.File", "java.io.FileInputStream", "java.io.FileOutputStream", "java.io.FileReader",
+        "java.io.FileWriter", "java.io.RandomAccessFile", "java.io.PrintStream", "java.io.PrintWriter",
+        "java.util.Formatter", "java.util.zip.ZipFile", "java.util.jar.JarFile",
+        // loads code from a module layer built from a jar in the working dir
+        "java.util.ServiceLoader",
+        // deserialization resolves classes without the lookup filter, so gadget chains on the classpath could run any code
+        "java.io.ObjectInputStream",
+        // runs JDK tools such as jar and javac in the worker, which read and write any file on the host
+        "java.util.spi.ToolProvider"
+    );
+    private static final List<String> DENIED_HOST_PACKAGES = List.of(
+        "java.lang.Process",
+        "java.lang.reflect.", "java.lang.invoke.", "java.net.", "java.rmi.", "javax.script.", "sun.", "com.sun.",
+        // file access, heap dumps (management) and native calls (foreign)
+        "java.nio.file.", "java.nio.channels.", "java.util.logging.", "java.util.prefs.",
+        "java.lang.management.", "java.lang.foreign.",
+        // reflection inside Java (XMLDecoder, Statement) and file-based JDBC drivers
+        "java.beans.", "java.sql.",
+        // Module and ModuleLayer, and module finders that can load a jar from the working dir
+        "java.lang.Module", "java.lang.module.",
+        // Toolkit, Font and ImageIO-backed classes load files by name directly on the host
+        "java.awt.",
+        // these classes (PluginUtilsService, ScriptService, TaskCommands) access host files directly, outside WorkingDirFileSystem
+        "io.kestra.core.models.tasks.runners."
+    );
+
+    protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException, IOException {
         var builder = contextBuilder(runContext)
             .engine(getEngine())
             // allow host access with a curated default
@@ -76,33 +107,22 @@ abstract class AbstractScript extends Task {
                     .denyAccess(ProcessBuilder.class)
                     .denyAccess(Process.class)
                     .denyAccess(System.class)
+                    // paths returned by Kestra APIs could otherwise be resolved to any file
+                    .denyAccess(java.io.File.class)
+                    .denyAccess(java.nio.file.Path.class)
+                    .denyAccess(java.nio.file.FileSystem.class)
+                    .denyAccess(java.nio.file.spi.FileSystemProvider.class)
+                    // a URI from a Kestra API could otherwise open any file: URL
+                    .denyAccess(java.net.URL.class)
+                    .denyAccess(java.net.URLConnection.class)
+                    // an instance obtained without a class lookup must not deserialize either
+                    .denyAccess(java.io.ObjectInputStream.class)
                     .build()
             )
-            // allow loading class
-            .allowHostClassLoading(true)
-            // restrict loading class to java.* and io.kestra.core.models.* but deny
-            // dangerous packages that allow OS command execution or arbitrary reflection
-            .allowHostClassLookup(name -> {
-                // Block Java classes/packages that enable OS-level command execution, reflection,
-                // class loading, JVM control, and networking. This is defense-in-depth on top of the
-                // HostAccess denyAccess rules above (which also block indirectly-obtained instances).
-                if (name.equals("java.lang.Runtime")
-                        || name.equals("java.lang.ProcessBuilder")
-                        || name.startsWith("java.lang.Process")
-                        || name.equals("java.lang.System")
-                        || name.equals("java.lang.Class")
-                        || name.equals("java.lang.ClassLoader")
-                        || name.startsWith("java.lang.reflect.")
-                        || name.startsWith("java.lang.invoke.")
-                        || name.startsWith("java.net.")
-                        || name.startsWith("java.rmi.")
-                        || name.startsWith("javax.script.")
-                        || name.startsWith("sun.")
-                        || name.startsWith("com.sun.")) {
-                    return false;
-                }
-                return name.startsWith("java.") || name.startsWith("io.kestra.core.models");
-            })
+            // no Java.addToClasspath(): a jar written to the working dir would run as unrestricted host code
+            .allowHostClassLoading(false)
+            // restrict loading class to java.* and io.kestra.core.models.* but deny dangerous classes and packages
+            .allowHostClassLookup(AbstractScript::isHostClassLookupAllowed)
             // log to the run context logger
             .logHandler(new SLF4JJULHandler(runContext.logger()))
             // needed for Ruby
@@ -119,6 +139,12 @@ abstract class AbstractScript extends Task {
             // flag -- not allowNativeAccess -- gates: with it off, both fail with
             // SecurityException/PermissionError even when native access is on.
             .allowCreateProcess(false)
+            // also overrides the IOAccess set by GraalPyResources.contextBuilder()
+            .allowIO(IOAccess.newBuilder()
+                .fileSystem(WorkingDirFileSystem.create(runContext.workingDir().path()))
+                .allowHostSocketAccess(true)
+                .build()
+            )
             .currentWorkingDirectory(runContext.workingDir().path())
             .out(out)
             .err(err);
@@ -129,6 +155,13 @@ abstract class AbstractScript extends Task {
         });
 
         return builder.build();
+    }
+
+    private static boolean isHostClassLookupAllowed(String name) {
+        if (DENIED_HOST_CLASSES.contains(name) || DENIED_HOST_PACKAGES.stream().anyMatch(name::startsWith)) {
+            return false;
+        }
+        return name.startsWith("java.") || name.startsWith("io.kestra.core.models");
     }
 
     private static void validateOptionKey(String key) {
@@ -184,7 +217,7 @@ abstract class AbstractScript extends Task {
     }
 
     protected Context.Builder contextBuilder(RunContext runContext) {
-        return Context.newBuilder().allowIO(IOAccess.ALL);
+        return Context.newBuilder();
     }
 
     // initialization-on-demand holder idiom
@@ -227,7 +260,33 @@ abstract class AbstractScript extends Task {
                 }
             }
 
+            // Ruby looks up its home by real path, which WorkingDirFileSystem only lets through when it matches these
+            useRealPath("polyglot.engine.userResourceCache");
+            useRealPath("polyglot.engine.resourcePath");
+
             return Engine.create();
+        }
+
+        private static void useRealPath(String property) {
+            var value = System.getProperty(property);
+            if (value == null) {
+                return;
+            }
+            try {
+                // the directory may not exist yet, so resolve its deepest existing parent
+                var path = Path.of(value).toAbsolutePath();
+                var existing = path;
+                while (existing != null && !Files.exists(existing)) {
+                    existing = existing.getParent();
+                }
+                if (existing == null) {
+                    return;
+                }
+                System.setProperty(property, existing.toRealPath().resolve(existing.relativize(path)).toString());
+            } catch (IOException | InvalidPathException e) {
+                // never throw from the static initializer, see createEngine()
+                LOG.warn("Unable to resolve the real path of '{}' ({}); Ruby scripts may fail to load their standard library", property, value, e);
+            }
         }
     }
 
