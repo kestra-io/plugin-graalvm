@@ -337,8 +337,7 @@ public final class WorkingDirFileSystem implements FileSystem {
             T call() throws IOException;
         }
 
-        // relative paths are resolved against the working dir file system's current directory, the same one used to
-        // route them here, not against the delegate's own
+        // resolve against the working dir cwd used for routing, not the delegate's
         private Path abs(Path path) {
             return workingDir.toAbsolutePath(path);
         }

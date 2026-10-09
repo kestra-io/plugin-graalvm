@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -375,20 +376,33 @@ class EvalTest {
     }
 
     @Test
-    void relativePathsLeavingWorkingDirAfterChdirAreDenied(@TempDir Path outsideDir) throws Exception {
+    void relativePathsAfterChdirAreResolvedAgainstWorkingDir() throws Exception {
         var runContext = runContextFactory.of();
         var workingDir = runContext.workingDir().path();
         Files.createDirectories(workingDir.resolve("a/b"));
-        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
-        var up = "../".repeat(40) + secret.toString().substring(1);
+        // sibling of the working dir: exactly three levels up from a/b
+        var secret = Files.writeString(workingDir.resolveSibling("secret-" + UUID.randomUUID() + ".txt"), "secret");
+        var chdir = "import os\nos.chdir('a/b')\n";
+        try {
+            // a short relative path to a real file outside the working dir is denied, for reads and writes
+            for (var operation : List.of("open('../../../%s').read()", "open('../../../%s', 'w').write('x')")) {
+                var script = chdir + operation.formatted(secret.getFileName()) + "\n";
+                var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext), script);
+                assertThat(script, exception.getMessage(), either(startsWith("PermissionError")).or(startsWith("OSError")));
+            }
+            assertThat(Files.readString(secret), is("secret"));
 
-        // chdir to a subdirectory, then walk out with relative paths (reads, and writes)
-        for (var operation : List.of("open('%s').read()", "open('%s', 'w').write('x')", "open('../../../%s').read()")) {
-            var script = "import os\nos.chdir('a/b')\n" + operation.formatted(operation.startsWith("open('../../../") ? "secret.txt" : up) + "\n";
-            var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext), script);
-            assertThat(script, exception.getMessage(), either(startsWith("PermissionError")).or(startsWith("OSError")));
+            // the bundled stdlib stays readable, and read-only, through a relative path computed from the new cwd
+            var before = readStdlibFile(runContext);
+            var relative = chdir + STDLIB_FILE + "relative = os.path.relpath(stdlib_file)\n";
+            var output = evalOf(relative + "content = open(relative).read()\n", "content").run(runContext);
+            assertThat(output.getOutputs().get("content"), is(before));
+
+            assertThrows(PolyglotException.class, () -> evalOf(relative + "open(relative, 'a').write('X = 1\\n')\n").run(runContext));
+            assertThat(readStdlibFile(runContext), is(before));
+        } finally {
+            Files.deleteIfExists(secret);
         }
-        assertThat(Files.readString(secret), is("secret"));
     }
 
     @Test
