@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -259,6 +260,81 @@ class WorkingDirFileSystemTest {
     @Test
     void createRejectsMissingWorkingDir() {
         assertThrows(NoSuchFileException.class, () -> WorkingDirFileSystem.create(tempDir.resolve("missing")));
+    }
+
+    @Test
+    void pathsOutsideWorkingDirAreNotWritable() throws IOException {
+        // real internal-resource coverage (stdlib reads and refused writes) lives in the Python tests
+        var cache = Files.createTempDirectory("kestra-graalvm-resource-cache-test");
+        var cached = Files.writeString(cache.resolve("lib.py"), "stdlib");
+        try {
+            var composite = WorkingDirFileSystem.create(root);
+            // outside paths that are not internal resources stay denied, and nothing outside is writable
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(outside, Set.of(StandardOpenOption.READ)));
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(cached, Set.of(StandardOpenOption.READ)));
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(cached, Set.of(StandardOpenOption.WRITE, StandardOpenOption.APPEND)));
+            assertThrows(SecurityException.class, () -> composite.delete(cached));
+            assertThrows(SecurityException.class, () -> composite.createDirectory(cache.resolve("dir")));
+            assertThat(Files.readString(cached), is("stdlib"));
+        } finally {
+            Files.deleteIfExists(cached);
+            Files.deleteIfExists(cache);
+        }
+    }
+
+    @Test
+    void createdFileSystemHandlesWorkingDirGivenThroughSymbolicLink() throws IOException {
+        var linkedRoot = Files.createSymbolicLink(tempDir.resolve("linkedWorkingDir"), root);
+        var composite = WorkingDirFileSystem.create(linkedRoot);
+        composite.setCurrentWorkingDirectory(linkedRoot);
+        Files.writeString(root.resolve("file.txt"), "inside");
+
+        for (var path : List.of(linkedRoot, linkedRoot.resolve("file.txt"), Path.of("file.txt"))) {
+            composite.checkAccess(path, Set.of(AccessMode.READ));
+        }
+        try (var channel = composite.newByteChannel(linkedRoot.resolve("new.txt"), Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE))) {
+            channel.write(ByteBuffer.wrap("x".getBytes(StandardCharsets.UTF_8)));
+        }
+        assertThat(Files.readString(root.resolve("new.txt")), is("x"));
+
+        var exception = assertThrows(SecurityException.class, () -> composite.newByteChannel(outside, Set.of(StandardOpenOption.READ)));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+    }
+
+    @Test
+    void symbolicLinkInWorkingDirIsRoutedToWorkingDirFileSystem() throws IOException {
+        var linkedRoot = Files.createSymbolicLink(tempDir.resolve("linkedWorkingDir"), root);
+        var linkedFs = new WorkingDirFileSystem(linkedRoot);
+        Files.createSymbolicLink(root.resolve("link.txt"), outside);
+
+        assertThat(linkedFs.isAccessible(linkedRoot.resolve("a/b")), is(true));
+        assertThat(linkedFs.isAccessible(linkedRoot.resolve("link.txt")), is(true));
+        assertThat(linkedFs.isAccessible(linkedRoot.getParent()), is(true));
+        assertThat(linkedFs.isAccessible(outside), is(false));
+    }
+
+    @Test
+    void relativePathsAreResolvedAgainstTheCurrentWorkingDirectory() throws IOException {
+        var composite = WorkingDirFileSystem.create(root);
+        var sub = Files.createDirectories(root.resolve("a/b"));
+        composite.setCurrentWorkingDirectory(sub);
+
+        // ../../../secret.txt from root/a/b is outside the working dir, whatever the delegate's own cwd is
+        var exception = assertThrows(SecurityException.class, () -> composite.newByteChannel(Path.of("../../../secret.txt"), Set.of(StandardOpenOption.READ)));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+        assertThrows(SecurityException.class, () -> composite.newByteChannel(Path.of("../../../created.txt"), Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE)));
+        assertThat(Files.exists(tempDir.resolve("created.txt")), is(false));
+        // ../.. from root/a/b is the working dir itself
+        composite.checkAccess(Path.of("../../a"), Set.of(AccessMode.READ));
+    }
+
+    @Test
+    void isAccessibleOnlyForWorkingDirAndPathsToIt() {
+        assertThat(fs.isAccessible(root.resolve("a/b")), is(true));
+        assertThat(fs.isAccessible(Path.of("relative.txt")), is(true));
+        assertThat(fs.isAccessible(root.getParent()), is(true));
+        assertThat(fs.isAccessible(outside), is(false));
+        assertThat(fs.isAccessible(root.resolve("../secret.txt")), is(false));
     }
 
     private void write(Path path, String content) throws IOException {

@@ -84,7 +84,9 @@ abstract class AbstractScript extends Task {
         // Module and ModuleLayer, and module finders that can load a jar from the working dir
         "java.lang.Module", "java.lang.module.",
         // Toolkit, Font and ImageIO-backed classes load files by name directly on the host
-        "java.awt."
+        "java.awt.",
+        // these classes (PluginUtilsService, ScriptService, TaskCommands) access host files directly, outside WorkingDirFileSystem
+        "io.kestra.core.models.tasks.runners."
     );
 
     protected Context buildContext(RunContext runContext, OutputStream out, OutputStream err) throws IllegalVariableEvaluationException, IOException {

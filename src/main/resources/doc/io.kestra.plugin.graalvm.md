@@ -8,6 +8,7 @@ Every task also accepts `options` (advanced, a map of GraalVM context option key
 
 Scripts can only access files inside the task working directory.
 File access through the language itself (for example Python's `open`, `os` or `tempfile`, JavaScript's `load()`, or Ruby's `load`) goes through a file system that rejects any path that resolves outside the working directory, including through `..` or a symbolic link.
+The bundled standard library (Python and Ruby) is read-only for scripts.
 Scripts cannot create symbolic links, and temporary files are created inside the working directory.
 
 Java classes that open files by name or path (`java.io.File`, `FileInputStream`, `FileOutputStream`, `java.nio.file.*` and similar) cannot be used from scripts, and `Path` or `File` objects returned by Kestra APIs such as `runContext.workingDir()` can only be passed back to Kestra APIs.

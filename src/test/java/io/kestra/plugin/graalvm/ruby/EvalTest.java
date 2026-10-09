@@ -96,6 +96,12 @@ class EvalTest {
         assertDenied(runContext, "load '%s'".formatted(runContext.workingDir().path().resolve("link.rb")), containsString("only access files inside the task working directory"));
     }
 
+    @Test
+    void fileWritesAreRefusedWithoutNativeAccess() throws Exception {
+        // Ruby cannot reach the stdlib files: File APIs need native access, which is not granted
+        assertDenied(runContextFactory.of(), "File.write($LOAD_PATH.last + '/json.rb', 'x')", is("native access is not allowed"));
+    }
+
     private void assertDenied(RunContext runContext, String script, org.hamcrest.Matcher<String> message) {
         Eval task = Eval.builder()
             .id("unit-test")

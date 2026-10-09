@@ -86,7 +86,8 @@ class EvalTest {
         "java.util.prefs.Preferences", "java.beans.XMLDecoder", "java.beans.Statement", "java.beans.Expression",
         "java.sql.DriverManager", "java.lang.ModuleLayer", "java.lang.Module", "java.lang.module.ModuleFinder",
         "java.util.ServiceLoader", "java.io.ObjectInputStream", "java.awt.Toolkit", "java.awt.Font",
-        "java.awt.image.PixelGrabber", "java.util.spi.ToolProvider"
+        "java.awt.image.PixelGrabber", "java.util.spi.ToolProvider",
+        "io.kestra.core.models.tasks.runners.ScriptService", "io.kestra.core.models.tasks.runners.PluginUtilsService"
     })
     void denyFileAccessClassLookup(String className) {
         RunContext runContext = runContextFactory.of();

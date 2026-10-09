@@ -25,7 +25,7 @@ import org.graalvm.polyglot.Value;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline Ruby with GraalVM",
-    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them."
+    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them. The bundled standard library is read-only for scripts."
 )
 @Plugin(
     examples = {

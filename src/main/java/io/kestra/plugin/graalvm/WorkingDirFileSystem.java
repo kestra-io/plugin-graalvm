@@ -40,9 +40,44 @@ public final class WorkingDirFileSystem implements FileSystem {
         this.currentWorkingDirectory = this.root;
     }
 
-    // internal resource access is needed for the Python and Ruby stdlib
+    // The Python and Ruby stdlib live in the engine-wide resource cache shared by every task on the worker,
+    // so scripts can read it but never write to it. Paths outside the working dir and the paths leading to it
+    // go to a read-only view of the internal resources (anything else is denied by GraalVM).
     public static FileSystem create(Path workingDirectory) throws IOException {
-        return FileSystem.allowInternalResourceAccess(new WorkingDirFileSystem(workingDirectory));
+        var workingDir = new WorkingDirFileSystem(workingDirectory);
+        var internalResources = new ReadOnlyInternalResources(
+            FileSystem.newReadOnlyFileSystem(FileSystem.allowInternalResourceAccess(FileSystem.newDenyIOFileSystem())),
+            workingDir
+        );
+        return FileSystem.newCompositeFileSystem(
+            workingDir,
+            FileSystem.Selector.of(internalResources, path -> !workingDir.isAccessible(path))
+        );
+    }
+
+    // Whether the working dir file system should handle the path (and decide to allow or deny it); false means the
+    // path is outside of it and may only be an internal resource. Follows symlinks like realPath, so a working dir
+    // reached through a host symlink matches, and never touches the host for a name outside the working dir.
+    boolean isAccessible(Path path) {
+        var absolute = toAbsolutePath(path);
+        var normalized = absolute.normalize();
+        // lexically inside: symlinks, if any, are checked by the operation itself
+        if (normalized.startsWith(root) || pathsToRoot.contains(normalized)) {
+            return true;
+        }
+        try {
+            var resolved = walk(path, absolute, false, candidate -> {
+                if (!candidate.startsWith(root) && !pathsToRoot.contains(candidate)) {
+                    throw deny(path);
+                }
+            });
+            return resolved.startsWith(root) || pathsToRoot.contains(resolved);
+        } catch (SecurityException e) {
+            return false;
+        } catch (IOException e) {
+            // let the working dir file system report the error itself
+            return true;
+        }
     }
 
     @Override
@@ -294,5 +329,164 @@ public final class WorkingDirFileSystem implements FileSystem {
 
     private SecurityException deny(Path path) {
         return new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + root + "'.");
+    }
+
+    // Replaces GraalVM's opaque denial with an actionable message.
+    private record ReadOnlyInternalResources(FileSystem delegate, WorkingDirFileSystem workingDir) implements FileSystem {
+        private interface IOCall<T> {
+            T call() throws IOException;
+        }
+
+        // resolve against the working dir cwd used for routing, not the delegate's
+        private Path abs(Path path) {
+            return workingDir.toAbsolutePath(path);
+        }
+
+        private <T> T guard(Path path, IOCall<T> call) throws IOException {
+            try {
+                return call.call();
+            } catch (SecurityException e) {
+                throw new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + workingDir.root + "', and the bundled standard library is read-only.", e);
+            }
+        }
+
+        @Override
+        public Path parsePath(URI uri) {
+            return delegate.parsePath(uri);
+        }
+
+        @Override
+        public Path parsePath(String path) {
+            return delegate.parsePath(path);
+        }
+
+        @Override
+        public void checkAccess(Path path, Set<? extends AccessMode> modes, LinkOption... linkOptions) throws IOException {
+            guard(path, () -> {
+                delegate.checkAccess(abs(path), modes, linkOptions);
+                return null;
+            });
+        }
+
+        @Override
+        public void createDirectory(Path dir, FileAttribute<?>... attrs) throws IOException {
+            guard(dir, () -> {
+                delegate.createDirectory(abs(dir), attrs);
+                return null;
+            });
+        }
+
+        @Override
+        public void delete(Path path) throws IOException {
+            guard(path, () -> {
+                delegate.delete(abs(path));
+                return null;
+            });
+        }
+
+        @Override
+        public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
+            return guard(path, () -> delegate.newByteChannel(abs(path), options, attrs));
+        }
+
+        @Override
+        public DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
+            return guard(dir, () -> delegate.newDirectoryStream(abs(dir), filter));
+        }
+
+        @Override
+        public Path toAbsolutePath(Path path) {
+            return workingDir.toAbsolutePath(path);
+        }
+
+        @Override
+        public Path toRealPath(Path path, LinkOption... linkOptions) throws IOException {
+            return guard(path, () -> delegate.toRealPath(abs(path), linkOptions));
+        }
+
+        @Override
+        public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options) throws IOException {
+            return guard(path, () -> delegate.readAttributes(abs(path), attributes, options));
+        }
+
+        @Override
+        public void setAttribute(Path path, String attribute, Object value, LinkOption... options) throws IOException {
+            guard(path, () -> {
+                delegate.setAttribute(abs(path), attribute, value, options);
+                return null;
+            });
+        }
+
+        @Override
+        public void copy(Path source, Path target, CopyOption... options) throws IOException {
+            guard(target, () -> {
+                delegate.copy(abs(source), abs(target), options);
+                return null;
+            });
+        }
+
+        @Override
+        public void move(Path source, Path target, CopyOption... options) throws IOException {
+            guard(source, () -> {
+                delegate.move(abs(source), abs(target), options);
+                return null;
+            });
+        }
+
+        @Override
+        public void createLink(Path link, Path existing) throws IOException {
+            guard(link, () -> {
+                delegate.createLink(abs(link), abs(existing));
+                return null;
+            });
+        }
+
+        @Override
+        public void createSymbolicLink(Path link, Path target, FileAttribute<?>... attrs) throws IOException {
+            guard(link, () -> {
+                delegate.createSymbolicLink(abs(link), target, attrs);
+                return null;
+            });
+        }
+
+        @Override
+        public Path readSymbolicLink(Path link) throws IOException {
+            return guard(link, () -> delegate.readSymbolicLink(abs(link)));
+        }
+
+        @Override
+        public void setCurrentWorkingDirectory(Path currentWorkingDirectory) {
+            delegate.setCurrentWorkingDirectory(currentWorkingDirectory);
+        }
+
+        @Override
+        public String getSeparator() {
+            return delegate.getSeparator();
+        }
+
+        @Override
+        public String getPathSeparator() {
+            return delegate.getPathSeparator();
+        }
+
+        @Override
+        public String getMimeType(Path path) {
+            return delegate.getMimeType(path);
+        }
+
+        @Override
+        public Charset getEncoding(Path path) {
+            return delegate.getEncoding(path);
+        }
+
+        @Override
+        public Path getTempDirectory() {
+            return delegate.getTempDirectory();
+        }
+
+        @Override
+        public boolean isSameFile(Path path1, Path path2, LinkOption... options) throws IOException {
+            return guard(path1, () -> delegate.isSameFile(abs(path1), abs(path2), options));
+        }
     }
 }
