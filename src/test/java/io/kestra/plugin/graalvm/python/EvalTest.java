@@ -353,8 +353,8 @@ class EvalTest {
     }
 
     private static final String STDLIB_FILE = """
-        import sys, os
-        stdlib_file = os.path.join(sys.prefix, 'lib', 'python3.11', 'colorsys.py')
+        import colorsys, os
+        stdlib_file = colorsys.__file__
         """;
 
     @Test
@@ -375,6 +375,23 @@ class EvalTest {
     }
 
     @Test
+    void relativePathsLeavingWorkingDirAfterChdirAreDenied(@TempDir Path outsideDir) throws Exception {
+        var runContext = runContextFactory.of();
+        var workingDir = runContext.workingDir().path();
+        Files.createDirectories(workingDir.resolve("a/b"));
+        var secret = Files.writeString(outsideDir.resolve("secret.txt"), "secret");
+        var up = "../".repeat(40) + secret.toString().substring(1);
+
+        // chdir to a subdirectory, then walk out with relative paths (reads, and writes)
+        for (var operation : List.of("open('%s').read()", "open('%s', 'w').write('x')", "open('../../../%s').read()")) {
+            var script = "import os\nos.chdir('a/b')\n" + operation.formatted(operation.startsWith("open('../../../") ? "secret.txt" : up) + "\n";
+            var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext), script);
+            assertThat(script, exception.getMessage(), either(startsWith("PermissionError")).or(startsWith("OSError")));
+        }
+        assertThat(Files.readString(secret), is("secret"));
+    }
+
+    @Test
     void internalResourcesCannotBeChangedAcrossTasks() throws Exception {
         assertThrows(PolyglotException.class, () -> evalOf(STDLIB_FILE + "open(stdlib_file, 'a').write('\\nINJECTED = 1\\n')\n").run(runContextFactory.of()));
 
@@ -391,7 +408,7 @@ class EvalTest {
             """, "state").run(runContextFactory.of());
         assertThat(output.getOutputs().get("state"), is("{\"a\": 0.0}"));
 
-        // modules switches the context to GraalPyResources.contextBuilder 
+        // modules switches the context to GraalPyResources.contextBuilder
         var withModules = Eval.builder()
             .id("unit-test")
             .type(Eval.class.getName())

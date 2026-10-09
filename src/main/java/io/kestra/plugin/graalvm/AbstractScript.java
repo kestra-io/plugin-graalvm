@@ -85,7 +85,7 @@ abstract class AbstractScript extends Task {
         "java.lang.Module", "java.lang.module.",
         // Toolkit, Font and ImageIO-backed classes load files by name directly on the host
         "java.awt.",
-        // raw host file IO (PluginUtilsService, ScriptService, TaskCommands) that bypasses WorkingDirFileSystem
+        // these classes (PluginUtilsService, ScriptService, TaskCommands) access host files directly, outside WorkingDirFileSystem
         "io.kestra.core.models.tasks.runners."
     );
 

@@ -47,7 +47,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         var workingDir = new WorkingDirFileSystem(workingDirectory);
         var internalResources = new ReadOnlyInternalResources(
             FileSystem.newReadOnlyFileSystem(FileSystem.allowInternalResourceAccess(FileSystem.newDenyIOFileSystem())),
-            workingDir.root
+            workingDir
         );
         return FileSystem.newCompositeFileSystem(
             workingDir,
@@ -332,16 +332,22 @@ public final class WorkingDirFileSystem implements FileSystem {
     }
 
     // Replaces GraalVM's opaque denial with an actionable message.
-    private record ReadOnlyInternalResources(FileSystem delegate, Path root) implements FileSystem {
+    private record ReadOnlyInternalResources(FileSystem delegate, WorkingDirFileSystem workingDir) implements FileSystem {
         private interface IOCall<T> {
             T call() throws IOException;
+        }
+
+        // relative paths are resolved against the working dir file system's current directory, the same one used to
+        // route them here, not against the delegate's own
+        private Path abs(Path path) {
+            return workingDir.toAbsolutePath(path);
         }
 
         private <T> T guard(Path path, IOCall<T> call) throws IOException {
             try {
                 return call.call();
             } catch (SecurityException e) {
-                throw new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + root + "', and the bundled standard library is read-only.", e);
+                throw new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + workingDir.root + "', and the bundled standard library is read-only.", e);
             }
         }
 
@@ -358,7 +364,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void checkAccess(Path path, Set<? extends AccessMode> modes, LinkOption... linkOptions) throws IOException {
             guard(path, () -> {
-                delegate.checkAccess(path, modes, linkOptions);
+                delegate.checkAccess(abs(path), modes, linkOptions);
                 return null;
             });
         }
@@ -366,7 +372,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void createDirectory(Path dir, FileAttribute<?>... attrs) throws IOException {
             guard(dir, () -> {
-                delegate.createDirectory(dir, attrs);
+                delegate.createDirectory(abs(dir), attrs);
                 return null;
             });
         }
@@ -374,40 +380,40 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void delete(Path path) throws IOException {
             guard(path, () -> {
-                delegate.delete(path);
+                delegate.delete(abs(path));
                 return null;
             });
         }
 
         @Override
         public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
-            return guard(path, () -> delegate.newByteChannel(path, options, attrs));
+            return guard(path, () -> delegate.newByteChannel(abs(path), options, attrs));
         }
 
         @Override
         public DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
-            return guard(dir, () -> delegate.newDirectoryStream(dir, filter));
+            return guard(dir, () -> delegate.newDirectoryStream(abs(dir), filter));
         }
 
         @Override
         public Path toAbsolutePath(Path path) {
-            return delegate.toAbsolutePath(path);
+            return workingDir.toAbsolutePath(path);
         }
 
         @Override
         public Path toRealPath(Path path, LinkOption... linkOptions) throws IOException {
-            return guard(path, () -> delegate.toRealPath(path, linkOptions));
+            return guard(path, () -> delegate.toRealPath(abs(path), linkOptions));
         }
 
         @Override
         public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options) throws IOException {
-            return guard(path, () -> delegate.readAttributes(path, attributes, options));
+            return guard(path, () -> delegate.readAttributes(abs(path), attributes, options));
         }
 
         @Override
         public void setAttribute(Path path, String attribute, Object value, LinkOption... options) throws IOException {
             guard(path, () -> {
-                delegate.setAttribute(path, attribute, value, options);
+                delegate.setAttribute(abs(path), attribute, value, options);
                 return null;
             });
         }
@@ -415,7 +421,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void copy(Path source, Path target, CopyOption... options) throws IOException {
             guard(target, () -> {
-                delegate.copy(source, target, options);
+                delegate.copy(abs(source), abs(target), options);
                 return null;
             });
         }
@@ -423,7 +429,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void move(Path source, Path target, CopyOption... options) throws IOException {
             guard(source, () -> {
-                delegate.move(source, target, options);
+                delegate.move(abs(source), abs(target), options);
                 return null;
             });
         }
@@ -431,7 +437,7 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void createLink(Path link, Path existing) throws IOException {
             guard(link, () -> {
-                delegate.createLink(link, existing);
+                delegate.createLink(abs(link), abs(existing));
                 return null;
             });
         }
@@ -439,14 +445,14 @@ public final class WorkingDirFileSystem implements FileSystem {
         @Override
         public void createSymbolicLink(Path link, Path target, FileAttribute<?>... attrs) throws IOException {
             guard(link, () -> {
-                delegate.createSymbolicLink(link, target, attrs);
+                delegate.createSymbolicLink(abs(link), target, attrs);
                 return null;
             });
         }
 
         @Override
         public Path readSymbolicLink(Path link) throws IOException {
-            return guard(link, () -> delegate.readSymbolicLink(link));
+            return guard(link, () -> delegate.readSymbolicLink(abs(link)));
         }
 
         @Override
@@ -481,7 +487,7 @@ public final class WorkingDirFileSystem implements FileSystem {
 
         @Override
         public boolean isSameFile(Path path1, Path path2, LinkOption... options) throws IOException {
-            return guard(path1, () -> delegate.isSameFile(path1, path2, options));
+            return guard(path1, () -> delegate.isSameFile(abs(path1), abs(path2), options));
         }
     }
 }

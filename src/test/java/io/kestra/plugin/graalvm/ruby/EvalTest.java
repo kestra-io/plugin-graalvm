@@ -97,9 +97,9 @@ class EvalTest {
     }
 
     @Test
-    void internalResourcesAreReadOnly() throws Exception {
-        // Ruby File APIs need native access, so a write attempt against the stdlib is refused before reaching the file system
-        assertDenied(runContextFactory.of(), "File.write($LOAD_PATH.last + '/json.rb', 'x')", not(emptyString()));
+    void fileWritesAreRefusedWithoutNativeAccess() throws Exception {
+        // Ruby cannot reach the stdlib files: File APIs need native access, which is not granted
+        assertDenied(runContextFactory.of(), "File.write($LOAD_PATH.last + '/json.rb', 'x')", is("native access is not allowed"));
     }
 
     private void assertDenied(RunContext runContext, String script, org.hamcrest.Matcher<String> message) {

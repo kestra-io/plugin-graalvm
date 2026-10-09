@@ -263,7 +263,8 @@ class WorkingDirFileSystemTest {
     }
 
     @Test
-    void internalResourcesAreReadOnly() throws IOException {
+    void pathsOutsideWorkingDirAreNotWritable() throws IOException {
+        // real internal-resource coverage (stdlib reads and refused writes) lives in the Python tests
         var cache = Files.createTempDirectory("kestra-graalvm-resource-cache-test");
         var cached = Files.writeString(cache.resolve("lib.py"), "stdlib");
         try {
@@ -310,6 +311,21 @@ class WorkingDirFileSystemTest {
         assertThat(linkedFs.isAccessible(linkedRoot.resolve("link.txt")), is(true));
         assertThat(linkedFs.isAccessible(linkedRoot.getParent()), is(true));
         assertThat(linkedFs.isAccessible(outside), is(false));
+    }
+
+    @Test
+    void relativePathsAreResolvedAgainstTheCurrentWorkingDirectory() throws IOException {
+        var composite = WorkingDirFileSystem.create(root);
+        var sub = Files.createDirectories(root.resolve("a/b"));
+        composite.setCurrentWorkingDirectory(sub);
+
+        // ../../../secret.txt from root/a/b is outside the working dir, whatever the delegate's own cwd is
+        var exception = assertThrows(SecurityException.class, () -> composite.newByteChannel(Path.of("../../../secret.txt"), Set.of(StandardOpenOption.READ)));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+        assertThrows(SecurityException.class, () -> composite.newByteChannel(Path.of("../../../created.txt"), Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE)));
+        assertThat(Files.exists(tempDir.resolve("created.txt")), is(false));
+        // ../.. from root/a/b is the working dir itself
+        composite.checkAccess(Path.of("../../a"), Set.of(AccessMode.READ));
     }
 
     @Test
