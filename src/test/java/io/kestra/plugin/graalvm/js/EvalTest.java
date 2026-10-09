@@ -86,7 +86,8 @@ class EvalTest {
         "java.util.prefs.Preferences", "java.beans.XMLDecoder", "java.beans.Statement", "java.beans.Expression",
         "java.sql.DriverManager", "java.lang.ModuleLayer", "java.lang.Module", "java.lang.module.ModuleFinder",
         "java.util.ServiceLoader", "java.io.ObjectInputStream", "java.awt.Toolkit", "java.awt.Font",
-        "java.awt.image.PixelGrabber", "java.util.spi.ToolProvider"
+        "java.awt.image.PixelGrabber", "java.util.spi.ToolProvider",
+        "io.kestra.core.models.tasks.runners.ScriptService", "io.kestra.core.models.tasks.runners.PluginUtilsService"
     })
     void denyFileAccessClassLookup(String className) {
         RunContext runContext = runContextFactory.of();
@@ -217,7 +218,8 @@ class EvalTest {
 
     private void assertLoadDenied(RunContext runContext, String script) {
         var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext));
-        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+        // paths outside the working dir are refused either by WorkingDirFileSystem or by the read-only internal resources view
+        assertThat(exception.getMessage(), anyOf(containsString("only access files inside the task working directory"), containsString("Operation is not allowed")));
     }
 
     @Test

@@ -329,7 +329,10 @@ class EvalTest {
 
         assertFileAccessDenied(runContext, "open('link.txt').read()");
         assertFileAccessDenied(runContext, "open('linkDir/secret.txt').read()");
-        assertFileAccessDenied(runContext, "import os\nos.symlink('%s', 'newLink')".formatted(secret));
+        // a link target outside the working dir is refused as a cross file system link
+        var exception = assertThrows(PolyglotException.class, () -> evalOf("import os\nos.symlink('%s', 'newLink')".formatted(secret)).run(runContext));
+        assertThat(exception.getMessage(), either(startsWith("PermissionError")).or(startsWith("OSError")));
+        assertThat(Files.exists(runContext.workingDir().path().resolve("newLink"), java.nio.file.LinkOption.NOFOLLOW_LINKS), is(false));
     }
 
     @Test
@@ -347,6 +350,62 @@ class EvalTest {
 
         var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
         assertThat(exception.getMessage(), startsWith("PermissionError"));
+    }
+
+    private static final String STDLIB_FILE = """
+        import sys, os
+        stdlib_file = os.path.join(sys.prefix, 'lib', 'python3.11', 'colorsys.py')
+        """;
+
+    @Test
+    void internalResourcesAreReadOnly() throws Exception {
+        for (var operation : List.of(
+            "open(stdlib_file, 'a').write('X = 1\\n')",
+            "open(stdlib_file, 'w').write('X = 1\\n')",
+            "open(stdlib_file + '.new', 'w').write('X = 1\\n')",
+            "os.remove(stdlib_file)",
+            "os.rename(stdlib_file, stdlib_file + '.bak')"
+        )) {
+            var runContext = runContextFactory.of();
+            var before = readStdlibFile(runContext);
+            var exception = assertThrows(PolyglotException.class, () -> evalOf(STDLIB_FILE + operation + "\n").run(runContext), operation);
+            assertThat(operation, exception.getMessage(), either(startsWith("PermissionError")).or(startsWith("OSError")));
+            assertThat(operation, readStdlibFile(runContext), is(before));
+        }
+    }
+
+    @Test
+    void internalResourcesCannotBeChangedAcrossTasks() throws Exception {
+        assertThrows(PolyglotException.class, () -> evalOf(STDLIB_FILE + "open(stdlib_file, 'a').write('\\nINJECTED = 1\\n')\n").run(runContextFactory.of()));
+
+        var output = evalOf("import colorsys\nstate = getattr(colorsys, 'INJECTED', 'clean')\n", "state").run(runContextFactory.of());
+        assertThat(output.getOutputs().get("state"), is("clean"));
+    }
+
+    // ssl and sqlite3 imports are covered by stdlibImports: a native module can be loaded by only one context per JVM
+    @Test
+    void internalResourcesStayReadable() throws Exception {
+        var output = evalOf("""
+            import json, colorsys
+            state = json.dumps({'a': colorsys.rgb_to_hsv(0, 0, 0)[0]})
+            """, "state").run(runContextFactory.of());
+        assertThat(output.getOutputs().get("state"), is("{\"a\": 0.0}"));
+
+        // modules switches the context to GraalPyResources.contextBuilder 
+        var withModules = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .modules(Property.ofValue(Map.of("hello.py", "X = 1\n")))
+            .script(Property.ofValue("import hello, json, colorsys\nstate = hello.X\n"))
+            .outputs(Property.ofValue(List.of("state")))
+            .build()
+            .run(runContextFactory.of());
+        assertThat(withModules.getOutputs().get("state"), is(1));
+    }
+
+    private String readStdlibFile(RunContext runContext) throws Exception {
+        var output = evalOf(STDLIB_FILE + "content = open(stdlib_file).read()\n", "content").run(runContext);
+        return (String) output.getOutputs().get("content");
     }
 
     private Eval evalOf(String script, String... outputs) {

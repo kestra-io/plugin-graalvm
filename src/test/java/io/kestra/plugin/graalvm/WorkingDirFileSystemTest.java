@@ -261,6 +261,34 @@ class WorkingDirFileSystemTest {
         assertThrows(NoSuchFileException.class, () -> WorkingDirFileSystem.create(tempDir.resolve("missing")));
     }
 
+    @Test
+    void internalResourcesAreReadOnly() throws IOException {
+        var cache = Files.createTempDirectory("kestra-graalvm-resource-cache-test");
+        var cached = Files.writeString(cache.resolve("lib.py"), "stdlib");
+        try {
+            var composite = WorkingDirFileSystem.create(root);
+            // outside paths that are not internal resources stay denied, and nothing outside is writable
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(outside, Set.of(StandardOpenOption.READ)));
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(cached, Set.of(StandardOpenOption.READ)));
+            assertThrows(SecurityException.class, () -> composite.newByteChannel(cached, Set.of(StandardOpenOption.WRITE, StandardOpenOption.APPEND)));
+            assertThrows(SecurityException.class, () -> composite.delete(cached));
+            assertThrows(SecurityException.class, () -> composite.createDirectory(cache.resolve("dir")));
+            assertThat(Files.readString(cached), is("stdlib"));
+        } finally {
+            Files.deleteIfExists(cached);
+            Files.deleteIfExists(cache);
+        }
+    }
+
+    @Test
+    void isAccessibleOnlyForWorkingDirAndPathsToIt() {
+        assertThat(fs.isAccessible(root.resolve("a/b")), is(true));
+        assertThat(fs.isAccessible(Path.of("relative.txt")), is(true));
+        assertThat(fs.isAccessible(root.getParent()), is(true));
+        assertThat(fs.isAccessible(outside), is(false));
+        assertThat(fs.isAccessible(root.resolve("../secret.txt")), is(false));
+    }
+
     private void write(Path path, String content) throws IOException {
         try (var channel = fs.newByteChannel(path, Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE))) {
             channel.write(ByteBuffer.wrap(content.getBytes(StandardCharsets.UTF_8)));

@@ -40,9 +40,24 @@ public final class WorkingDirFileSystem implements FileSystem {
         this.currentWorkingDirectory = this.root;
     }
 
-    // internal resource access is needed for the Python and Ruby stdlib
+    // The Python and Ruby stdlib live in the engine-wide resource cache shared by every task on the worker,
+    // so scripts can read it but never write to it. Paths outside the working dir and the paths leading to it
+    // go to a read-only view of the internal resources (anything else is denied by GraalVM).
     public static FileSystem create(Path workingDirectory) throws IOException {
-        return FileSystem.allowInternalResourceAccess(new WorkingDirFileSystem(workingDirectory));
+        var workingDir = new WorkingDirFileSystem(workingDirectory);
+        var internalResources = FileSystem.newReadOnlyFileSystem(
+            FileSystem.allowInternalResourceAccess(FileSystem.newDenyIOFileSystem())
+        );
+        return FileSystem.newCompositeFileSystem(
+            workingDir,
+            FileSystem.Selector.of(internalResources, path -> !workingDir.isAccessible(path))
+        );
+    }
+
+    // Same check as the one done in realPath on each visited name, without touching the host.
+    boolean isAccessible(Path path) {
+        var absolute = toAbsolutePath(path).normalize();
+        return absolute.startsWith(root) || pathsToRoot.contains(absolute);
     }
 
     @Override

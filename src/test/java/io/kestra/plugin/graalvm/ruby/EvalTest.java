@@ -92,8 +92,14 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
         Files.createSymbolicLink(runContext.workingDir().path().resolve("link.rb"), evil);
 
-        assertDenied(runContext, "load '%s'".formatted(evil), containsString("only access files inside the task working directory"));
+        assertDenied(runContext, "load '%s'".formatted(evil), anyOf(containsString("only access files inside the task working directory"), containsString("Operation is not allowed")));
         assertDenied(runContext, "load '%s'".formatted(runContext.workingDir().path().resolve("link.rb")), containsString("only access files inside the task working directory"));
+    }
+
+    @Test
+    void internalResourcesAreReadOnly() throws Exception {
+        // Ruby File APIs need native access, so a write attempt against the stdlib is refused before reaching the file system
+        assertDenied(runContextFactory.of(), "File.write($LOAD_PATH.last + '/json.rb', 'x')", not(emptyString()));
     }
 
     private void assertDenied(RunContext runContext, String script, org.hamcrest.Matcher<String> message) {
