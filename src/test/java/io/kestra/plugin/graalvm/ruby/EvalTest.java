@@ -92,7 +92,7 @@ class EvalTest {
         RunContext runContext = runContextFactory.of();
         Files.createSymbolicLink(runContext.workingDir().path().resolve("link.rb"), evil);
 
-        assertDenied(runContext, "load '%s'".formatted(evil), anyOf(containsString("only access files inside the task working directory"), containsString("Operation is not allowed")));
+        assertDenied(runContext, "load '%s'".formatted(evil), containsString("only access files inside the task working directory"));
         assertDenied(runContext, "load '%s'".formatted(runContext.workingDir().path().resolve("link.rb")), containsString("only access files inside the task working directory"));
     }
 

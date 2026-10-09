@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -278,6 +279,37 @@ class WorkingDirFileSystemTest {
             Files.deleteIfExists(cached);
             Files.deleteIfExists(cache);
         }
+    }
+
+    @Test
+    void createdFileSystemHandlesWorkingDirGivenThroughSymbolicLink() throws IOException {
+        var linkedRoot = Files.createSymbolicLink(tempDir.resolve("linkedWorkingDir"), root);
+        var composite = WorkingDirFileSystem.create(linkedRoot);
+        composite.setCurrentWorkingDirectory(linkedRoot);
+        Files.writeString(root.resolve("file.txt"), "inside");
+
+        for (var path : List.of(linkedRoot, linkedRoot.resolve("file.txt"), Path.of("file.txt"))) {
+            composite.checkAccess(path, Set.of(AccessMode.READ));
+        }
+        try (var channel = composite.newByteChannel(linkedRoot.resolve("new.txt"), Set.of(StandardOpenOption.CREATE, StandardOpenOption.WRITE))) {
+            channel.write(ByteBuffer.wrap("x".getBytes(StandardCharsets.UTF_8)));
+        }
+        assertThat(Files.readString(root.resolve("new.txt")), is("x"));
+
+        var exception = assertThrows(SecurityException.class, () -> composite.newByteChannel(outside, Set.of(StandardOpenOption.READ)));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
+    }
+
+    @Test
+    void symbolicLinkInWorkingDirIsRoutedToWorkingDirFileSystem() throws IOException {
+        var linkedRoot = Files.createSymbolicLink(tempDir.resolve("linkedWorkingDir"), root);
+        var linkedFs = new WorkingDirFileSystem(linkedRoot);
+        Files.createSymbolicLink(root.resolve("link.txt"), outside);
+
+        assertThat(linkedFs.isAccessible(linkedRoot.resolve("a/b")), is(true));
+        assertThat(linkedFs.isAccessible(linkedRoot.resolve("link.txt")), is(true));
+        assertThat(linkedFs.isAccessible(linkedRoot.getParent()), is(true));
+        assertThat(linkedFs.isAccessible(outside), is(false));
     }
 
     @Test

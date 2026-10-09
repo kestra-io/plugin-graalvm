@@ -218,8 +218,7 @@ class EvalTest {
 
     private void assertLoadDenied(RunContext runContext, String script) {
         var exception = assertThrows(PolyglotException.class, () -> evalOf(script).run(runContext));
-        // paths outside the working dir are refused either by WorkingDirFileSystem or by the read-only internal resources view
-        assertThat(exception.getMessage(), anyOf(containsString("only access files inside the task working directory"), containsString("Operation is not allowed")));
+        assertThat(exception.getMessage(), containsString("only access files inside the task working directory"));
     }
 
     @Test
