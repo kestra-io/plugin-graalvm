@@ -48,6 +48,32 @@
 - Provides plugin components under `io.kestra.plugin.graalvm`.
 - Includes classes such as `SLF4JJULHandler`, `RunContextProxy`, `LogRunnable`, `FileTransform`.
 
+## Configuration
+
+Scripts can only access files inside the task working directory.
+Operators can let scripts read other host directories, for example a data volume mounted on the worker, with the `allowed-paths` plugin configuration.
+Allowed directories are read-only for scripts.
+
+Plugin configuration is matched on the exact task type, so add one entry for each task type that needs access:
+
+```yaml
+kestra:
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.graalvm.python.Eval
+        values:
+          allowed-paths:
+            - /mnt/data
+      - type: io.kestra.plugin.graalvm.python.FileTransform
+        values:
+          allowed-paths:
+            - /mnt/data
+```
+
+Each entry must be an absolute path to an existing directory.
+Do not allow a parent of the worker's working directories, or scripts could read the files of other tasks.
+The global `kestra.local-files.allowed-paths` setting does not apply to these tasks.
+
 ## Documentation
 * Full documentation can be found under: [kestra.io/docs](https://kestra.io/docs)
 * Documentation for developing a plugin is included in the [Plugin Developer Guide](https://kestra.io/docs/plugin-developer-guide/)

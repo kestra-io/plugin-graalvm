@@ -21,6 +21,8 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -141,7 +143,7 @@ abstract class AbstractScript extends Task {
             .allowCreateProcess(false)
             // also overrides the IOAccess set by GraalPyResources.contextBuilder()
             .allowIO(IOAccess.newBuilder()
-                .fileSystem(WorkingDirFileSystem.create(runContext.workingDir().path()))
+                .fileSystem(WorkingDirFileSystem.create(runContext.workingDir().path(), allowedPaths(runContext), pluginType()))
                 .allowHostSocketAccess(true)
                 .build()
             )
@@ -155,6 +157,45 @@ abstract class AbstractScript extends Task {
         });
 
         return builder.build();
+    }
+
+    // scripts only get RunContextProxy, which cannot read this; the global kestra.local-files.allowed-paths is ignored on purpose
+    private List<Path> allowedPaths(RunContext runContext) {
+        return parseAllowedPaths(runContext.pluginConfiguration(WorkingDirFileSystem.ALLOWED_PATHS).orElse(null), pluginType());
+    }
+
+    static List<Path> parseAllowedPaths(Object configured, String pluginType) {
+        if (configured == null) {
+            return List.of();
+        }
+        if (!(configured instanceof Collection<?> entries)) {
+            throw invalidAllowedPaths(pluginType, "it must be a list of absolute directory paths");
+        }
+        var allowedPaths = new ArrayList<Path>();
+        for (var entry : entries) {
+            if (!(entry instanceof String value) || value.isBlank()) {
+                throw invalidAllowedPaths(pluginType, "'" + entry + "' is not a directory path");
+            }
+            Path path;
+            try {
+                path = Path.of(value);
+            } catch (InvalidPathException e) {
+                throw invalidAllowedPaths(pluginType, "'" + value + "' is not a valid path");
+            }
+            if (!path.isAbsolute()) {
+                throw invalidAllowedPaths(pluginType, "'" + value + "' is not an absolute path");
+            }
+            allowedPaths.add(path);
+        }
+        return allowedPaths;
+    }
+
+    private static IllegalArgumentException invalidAllowedPaths(String pluginType, String reason) {
+        return new IllegalArgumentException("Invalid `" + WorkingDirFileSystem.ALLOWED_PATHS + "` plugin configuration for `" + pluginType + "`: " + reason + ".");
+    }
+
+    private String pluginType() {
+        return getType() != null ? getType() : getClass().getName();
     }
 
     private static boolean isHostClassLookupAllowed(String name) {

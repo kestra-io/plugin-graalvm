@@ -16,6 +16,36 @@ To store a file in Kestra's internal storage, pass its content as a stream: `run
 
 Python native modules are the exception, see the security note on the Python tasks below.
 
+### Allowing scripts to read other directories
+
+Operators can let scripts read host directories outside the working directory, for example a data volume mounted on the worker, with the `allowed-paths` plugin configuration.
+Allowed directories are read-only for scripts: writing, deleting, renaming or creating files inside them fails with a permission error.
+The same protections as for the working directory apply, so `..` or a symbolic link cannot reach anything outside an allowed directory.
+
+Plugin configuration is matched on the exact task type, so add one entry for each task type that needs access:
+
+```yaml
+kestra:
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.graalvm.python.Eval
+        values:
+          allowed-paths:
+            - /mnt/data
+      - type: io.kestra.plugin.graalvm.python.FileTransform
+        values:
+          allowed-paths:
+            - /mnt/data
+```
+
+Each entry must be an absolute path to an existing directory, otherwise the task fails before the script runs.
+Scripts can then read the files directly, for example `open('/mnt/data/events.csv')` in Python.
+Scripts cannot read the plugin configuration itself.
+
+Only allow directories that every flow using these task types may read.
+In particular, do not allow a parent of the worker's working directories (such as the worker temporary directory), or scripts could read the files of other tasks.
+The global `kestra.local-files.allowed-paths` setting does not apply to these tasks: it only covers `file://` URIs in inputs and functions.
+
 ## Tasks
 
 ### JavaScript

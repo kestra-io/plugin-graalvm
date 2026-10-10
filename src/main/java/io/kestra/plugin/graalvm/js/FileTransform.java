@@ -23,7 +23,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Transform rows with JavaScript on GraalVM",
-    description = "Streams rows from `from` (kestra:// URI, map, or list), lets JavaScript mutate `row`, and writes the result as an ION file. Set `concurrent` for parallel processing (order not preserved). Set `row = null` to drop a record; set `rows` array to emit multiple rows."
+    description = "Streams rows from `from` (kestra:// URI, map, or list), lets JavaScript mutate `row`, and writes the result as an ION file. Set `concurrent` for parallel processing (order not preserved). Set `row = null` to drop a record; set `rows` array to emit multiple rows. File access is limited to the task working directory. Operators can let scripts read extra host directories, read-only, with the `allowed-paths` plugin configuration of this task type."
 )
 @Plugin(
     examples = {

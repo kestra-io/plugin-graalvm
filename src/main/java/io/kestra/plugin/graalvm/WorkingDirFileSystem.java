@@ -13,38 +13,73 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-// Restricts guest file access to the task working directory, resolving symlinks before checking paths.
+// Restricts guest file access to the task working directory and read-only allowed paths, resolving symlinks first.
 // Guest code cannot create symlinks, so it cannot swap one in between the check and the file operation.
 public final class WorkingDirFileSystem implements FileSystem {
+    static final String ALLOWED_PATHS = "allowed-paths";
     private static final String TEMP_DIRECTORY_NAME = ".tmp";
     // same as Linux MAXSYMLINKS
     private static final int MAX_SYMBOLIC_LINKS = 40;
+    private static final Set<OpenOption> WRITE_OPTIONS = Set.of(
+        StandardOpenOption.WRITE, StandardOpenOption.APPEND, StandardOpenOption.CREATE, StandardOpenOption.CREATE_NEW,
+        StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.DELETE_ON_CLOSE
+    );
 
     private final FileSystem delegate = FileSystem.newDefaultFileSystem();
     private final Path root;
-    // paths visited to resolve the working dir as given, which may go through host symlinks such as
-    // /var -> /private/var on macOS; chosen by the host, not the script, so probing them reveals nothing
+    // real paths of the directories from the allowed-paths plugin configuration, which scripts can only read
+    private final List<Path> readOnlyRoots = new ArrayList<>();
+    // paths visited to resolve the working dir and the allowed paths as given, which may go through host symlinks
+    // such as /var -> /private/var on macOS; chosen by the host, not the script, so probing them reveals nothing
     private final Set<Path> pathsToRoot = new HashSet<>();
+    private final String pluginType;
     private volatile Path currentWorkingDirectory;
 
     WorkingDirFileSystem(Path workingDirectory) throws IOException {
+        this(workingDirectory, List.of(), null);
+    }
+
+    WorkingDirFileSystem(Path workingDirectory, List<Path> allowedPaths, String pluginType) throws IOException {
         this.root = workingDirectory.toRealPath();
-        for (var ancestor = root; ancestor != null; ancestor = ancestor.getParent()) {
-            pathsToRoot.add(ancestor);
+        this.pluginType = pluginType;
+        addPathsTo(root, workingDirectory);
+        for (var allowedPath : allowedPaths) {
+            Path realPath;
+            try {
+                realPath = allowedPath.toRealPath();
+            } catch (NoSuchFileException e) {
+                throw new IllegalArgumentException("The directory '" + allowedPath + "' from the `" + ALLOWED_PATHS + "` plugin configuration of `" + pluginType + "` does not exist.", e);
+            }
+            if (!Files.isDirectory(realPath)) {
+                throw new IllegalArgumentException("The path '" + allowedPath + "' from the `" + ALLOWED_PATHS + "` plugin configuration of `" + pluginType + "` is not a directory.");
+            }
+            readOnlyRoots.add(realPath);
+            addPathsTo(realPath, allowedPath);
         }
-        walk(workingDirectory, workingDirectory.toAbsolutePath(), true, pathsToRoot::add);
         this.currentWorkingDirectory = this.root;
     }
 
-    // The Python and Ruby stdlib live in the engine-wide resource cache shared by every task on the worker,
-    // so scripts can read it but never write to it. Paths outside the working dir and the paths leading to it
-    // go to a read-only view of the internal resources (anything else is denied by GraalVM).
+    private void addPathsTo(Path realPath, Path givenPath) throws IOException {
+        for (var ancestor = realPath; ancestor != null; ancestor = ancestor.getParent()) {
+            pathsToRoot.add(ancestor);
+        }
+        walk(givenPath, givenPath.toAbsolutePath(), true, pathsToRoot::add);
+    }
+
     public static FileSystem create(Path workingDirectory) throws IOException {
-        var workingDir = new WorkingDirFileSystem(workingDirectory);
+        return create(workingDirectory, List.of(), null);
+    }
+
+    // The Python and Ruby stdlib live in the engine-wide resource cache shared by every task on the worker,
+    // so scripts can read it but never write to it. Paths outside the working dir, the allowed paths and the paths
+    // leading to them go to a read-only view of the internal resources (anything else is denied by GraalVM).
+    public static FileSystem create(Path workingDirectory, List<Path> allowedPaths, String pluginType) throws IOException {
+        var workingDir = new WorkingDirFileSystem(workingDirectory, allowedPaths, pluginType);
         var internalResources = new ReadOnlyInternalResources(
             FileSystem.newReadOnlyFileSystem(FileSystem.allowInternalResourceAccess(FileSystem.newDenyIOFileSystem())),
             workingDir
@@ -56,22 +91,22 @@ public final class WorkingDirFileSystem implements FileSystem {
     }
 
     // Whether the working dir file system should handle the path (and decide to allow or deny it); false means the
-    // path is outside of it and may only be an internal resource. Follows symlinks like realPath, so a working dir
-    // reached through a host symlink matches, and never touches the host for a name outside the working dir.
+    // path is outside of it and may only be an internal resource. Follows symlinks like realPath, so a working dir or
+    // an allowed path reached through a host symlink matches, and never touches the host for a name outside them.
     boolean isAccessible(Path path) {
         var absolute = toAbsolutePath(path);
         var normalized = absolute.normalize();
         // lexically inside: symlinks, if any, are checked by the operation itself
-        if (normalized.startsWith(root) || pathsToRoot.contains(normalized)) {
+        if (isInsideRoots(normalized) || pathsToRoot.contains(normalized)) {
             return true;
         }
         try {
             var resolved = walk(path, absolute, false, candidate -> {
-                if (!candidate.startsWith(root) && !pathsToRoot.contains(candidate)) {
+                if (!isInsideRoots(candidate) && !pathsToRoot.contains(candidate)) {
                     throw deny(path);
                 }
             });
-            return resolved.startsWith(root) || pathsToRoot.contains(resolved);
+            return isInsideRoots(resolved) || pathsToRoot.contains(resolved);
         } catch (SecurityException e) {
             return false;
         } catch (IOException e) {
@@ -92,22 +127,30 @@ public final class WorkingDirFileSystem implements FileSystem {
 
     @Override
     public void checkAccess(Path path, Set<? extends AccessMode> modes, LinkOption... linkOptions) throws IOException {
-        delegate.checkAccess(resolve(path, linkOptions), modes, linkOptions);
+        var resolved = resolve(path, linkOptions);
+        delegate.checkAccess(resolved, modes, linkOptions);
+        // checked after the host, so a missing file is still reported as missing
+        if (modes.contains(AccessMode.WRITE) && !resolved.startsWith(root)) {
+            throw new AccessDeniedException(path.toString(), null, "directories from the `" + ALLOWED_PATHS + "` plugin configuration are read-only for GraalVM scripts");
+        }
     }
 
     @Override
     public void createDirectory(Path dir, FileAttribute<?>... attrs) throws IOException {
-        delegate.createDirectory(resolveNoFollow(dir), attrs);
+        delegate.createDirectory(resolveWritable(dir, false), attrs);
     }
 
     @Override
     public void delete(Path path) throws IOException {
-        delegate.delete(resolveNoFollow(path));
+        delegate.delete(resolveWritable(path, false));
     }
 
     @Override
     public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
-        var resolved = options.contains(LinkOption.NOFOLLOW_LINKS) ? resolveNoFollow(path) : resolveFollow(path);
+        var followFinalLink = !options.contains(LinkOption.NOFOLLOW_LINKS);
+        var resolved = options.stream().anyMatch(WRITE_OPTIONS::contains)
+            ? resolveWritable(path, followFinalLink)
+            : realPath(path, followFinalLink);
         return delegate.newByteChannel(resolved, options, attrs);
     }
 
@@ -133,7 +176,7 @@ public final class WorkingDirFileSystem implements FileSystem {
 
     @Override
     public void setAttribute(Path path, String attribute, Object value, LinkOption... options) throws IOException {
-        delegate.setAttribute(resolve(path, options), attribute, value, options);
+        delegate.setAttribute(resolveWritable(path, !Arrays.asList(options).contains(LinkOption.NOFOLLOW_LINKS)), attribute, value, options);
     }
 
     @Override
@@ -146,19 +189,20 @@ public final class WorkingDirFileSystem implements FileSystem {
         } else {
             resolvedSource = resolveFollow(source);
         }
-        delegate.copy(resolvedSource, resolveNoFollow(target), options);
+        delegate.copy(resolvedSource, resolveWritable(target, false), options);
     }
 
     @Override
     public void move(Path source, Path target, CopyOption... options) throws IOException {
-        var resolvedSource = resolveNoFollow(source);
+        var resolvedSource = resolveWritable(source, false);
         denyIfContainsSymbolicLink(source, resolvedSource);
-        delegate.move(resolvedSource, resolveNoFollow(target), options);
+        delegate.move(resolvedSource, resolveWritable(target, false), options);
     }
 
     @Override
     public void createLink(Path link, Path existing) throws IOException {
-        delegate.createLink(resolveNoFollow(link), resolveFollow(existing));
+        // a hard link shares the file content, so linking a read-only file would let the script write to it
+        delegate.createLink(resolveWritable(link, false), resolveWritable(existing, true));
     }
 
     @Override
@@ -240,18 +284,39 @@ public final class WorkingDirFileSystem implements FileSystem {
     }
 
     // Resolves the path one name at a time like the OS, following symlinks (including dangling ones, which the
-    // OS follows on create). A name outside the working dir and the paths to it is denied before the host is
-    // touched, so errors from the host never reveal what exists outside the working directory.
+    // OS follows on create). A name outside the working dir, the allowed paths and the paths to them is denied
+    // before the host is touched, so errors from the host never reveal what exists outside of them.
     private Path realPath(Path original, boolean followFinalLink) throws IOException {
         var resolved = walk(original, toAbsolutePath(original), followFinalLink, candidate -> {
-            if (!candidate.startsWith(root) && !pathsToRoot.contains(candidate)) {
+            if (!isInsideRoots(candidate) && !pathsToRoot.contains(candidate)) {
                 throw deny(original);
             }
         });
-        if (!resolved.startsWith(root)) {
+        if (!isInsideRoots(resolved)) {
             throw deny(original);
         }
         return resolved;
+    }
+
+    // only the working dir is writable, the allowed paths are read-only
+    private Path resolveWritable(Path original, boolean followFinalLink) throws IOException {
+        var resolved = realPath(original, followFinalLink);
+        if (!resolved.startsWith(root)) {
+            throw new SecurityException("Writing to '" + original + "' is denied: directories from the `" + ALLOWED_PATHS + "` plugin configuration are read-only for GraalVM scripts. Write into the task working directory '" + root + "' instead.");
+        }
+        return resolved;
+    }
+
+    private boolean isInsideRoots(Path path) {
+        if (path.startsWith(root)) {
+            return true;
+        }
+        for (var readOnlyRoot : readOnlyRoots) {
+            if (path.startsWith(readOnlyRoot)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // visit is called on each name before the host is touched for it
@@ -328,7 +393,14 @@ public final class WorkingDirFileSystem implements FileSystem {
     }
 
     private SecurityException deny(Path path) {
-        return new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + root + "'.");
+        return new SecurityException(denialMessage(path));
+    }
+
+    // never lists the allowed paths: scripts cannot read the plugin configuration
+    private String denialMessage(Path path) {
+        var allowed = readOnlyRoots.isEmpty() ? "" : " and the directories allowed for this task";
+        return "Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + root + "'" + allowed
+            + ". To let scripts read another directory, add it to the `" + ALLOWED_PATHS + "` plugin configuration of " + (pluginType != null ? "`" + pluginType + "`" : "this task type") + ".";
     }
 
     // Replaces GraalVM's opaque denial with an actionable message.
@@ -346,7 +418,7 @@ public final class WorkingDirFileSystem implements FileSystem {
             try {
                 return call.call();
             } catch (SecurityException e) {
-                throw new SecurityException("Access to '" + path + "' is denied: GraalVM scripts can only access files inside the task working directory '" + workingDir.root + "', and the bundled standard library is read-only.", e);
+                throw new SecurityException(workingDir.denialMessage(path) + " The bundled standard library is read-only.", e);
             }
         }
 
