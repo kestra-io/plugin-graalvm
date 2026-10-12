@@ -8,14 +8,25 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.AccessMode;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class WorkingDirFileSystemAllowedPathsTest {
@@ -117,6 +128,24 @@ class WorkingDirFileSystemAllowedPathsTest {
     }
 
     @Test
+    void deniesSiblingsSharingTheAllowedPathNamePrefix() throws IOException {
+        // "data2".startsWith("data") as strings, but they are different directories
+        var sibling = Files.createDirectory(tempDir.resolve("data2")).toRealPath();
+        Files.writeString(sibling.resolve("file.txt"), "sibling");
+        Files.writeString(tempDir.resolve("data-secret"), "secret");
+        Files.createSymbolicLink(allowed.resolve("siblingLink"), sibling);
+
+        assertDenied(sibling.resolve("file.txt"));
+        assertDenied(sibling);
+        assertDenied(allowed.resolve("../data2/file.txt"));
+        assertDenied(allowed.resolveSibling("data-secret"));
+        assertDenied(allowed.resolve("siblingLink/file.txt"));
+        assertThrows(SecurityException.class, () -> list(sibling));
+        assertThrows(SecurityException.class, () -> write(sibling.resolve("new.txt"), "x"));
+        assertThat(Files.exists(sibling.resolve("new.txt")), is(false));
+    }
+
+    @Test
     void deniesSymbolicLinksInAllowedPathPointingOutside() throws IOException {
         Files.createSymbolicLink(allowed.resolve("link.txt"), outside);
         Files.createSymbolicLink(allowed.resolve("linkDir"), outside.getParent());
@@ -159,12 +188,31 @@ class WorkingDirFileSystemAllowedPathsTest {
     }
 
     @Test
-    void rejectsMissingOrInvalidAllowedPath() {
+    void rejectsMissingOrInvalidAllowedPath() throws IOException {
         var missing = assertThrows(IllegalArgumentException.class, () -> WorkingDirFileSystem.create(root, List.of(tempDir.resolve("missing")), PLUGIN_TYPE));
         assertThat(missing.getMessage(), containsString("does not exist"));
 
         var notDirectory = assertThrows(IllegalArgumentException.class, () -> WorkingDirFileSystem.create(root, List.of(outside), PLUGIN_TYPE));
         assertThat(notDirectory.getMessage(), containsString("is not a directory"));
+
+        var loop = Files.createSymbolicLink(tempDir.resolve("loop"), tempDir.resolve("loop"));
+        var unresolvable = assertThrows(IllegalArgumentException.class, () -> WorkingDirFileSystem.create(root, List.of(loop), PLUGIN_TYPE));
+        assertThat(unresolvable.getMessage(), startsWith("Invalid `allowed-paths` plugin configuration for `" + PLUGIN_TYPE + "`: the directory '" + loop + "' cannot be accessed"));
+    }
+
+    @Test
+    void rejectsAllowedPathContainingTheWorkingDir() throws IOException {
+        var linkedParent = Files.createSymbolicLink(tempDir.resolve("linkedParent"), root.getParent());
+
+        for (var tooBroad : List.of(root, root.getParent(), root.getRoot(), linkedParent)) {
+            var exception = assertThrows(IllegalArgumentException.class, () -> WorkingDirFileSystem.create(root, List.of(tooBroad), PLUGIN_TYPE), tooBroad.toString());
+            assertThat(exception.getMessage(), startsWith("Invalid `allowed-paths` plugin configuration for `" + PLUGIN_TYPE + "`: the directory '" + tooBroad + "' contains the task working directory"));
+        }
+
+        // a directory inside the working dir is writable, so it cannot be a read-only allowed path
+        var inside = Files.createDirectory(root.resolve("inside"));
+        var exception = assertThrows(IllegalArgumentException.class, () -> WorkingDirFileSystem.create(root, List.of(inside), PLUGIN_TYPE));
+        assertThat(exception.getMessage(), containsString("'" + inside + "' is inside the task working directory"));
     }
 
     @Test

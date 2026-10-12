@@ -169,29 +169,25 @@ abstract class AbstractScript extends Task {
             return List.of();
         }
         if (!(configured instanceof Collection<?> entries)) {
-            throw invalidAllowedPaths(pluginType, "it must be a list of absolute directory paths");
+            throw WorkingDirFileSystem.invalidAllowedPaths(pluginType, "it must be a list of absolute directory paths", null);
         }
         var allowedPaths = new ArrayList<Path>();
         for (var entry : entries) {
             if (!(entry instanceof String value) || value.isBlank()) {
-                throw invalidAllowedPaths(pluginType, "'" + entry + "' is not a directory path");
+                throw WorkingDirFileSystem.invalidAllowedPaths(pluginType, "'" + entry + "' is not a directory path", null);
             }
             Path path;
             try {
                 path = Path.of(value);
             } catch (InvalidPathException e) {
-                throw invalidAllowedPaths(pluginType, "'" + value + "' is not a valid path");
+                throw WorkingDirFileSystem.invalidAllowedPaths(pluginType, "'" + value + "' is not a valid path", e);
             }
             if (!path.isAbsolute()) {
-                throw invalidAllowedPaths(pluginType, "'" + value + "' is not an absolute path");
+                throw WorkingDirFileSystem.invalidAllowedPaths(pluginType, "'" + value + "' is not an absolute path", null);
             }
             allowedPaths.add(path);
         }
         return allowedPaths;
-    }
-
-    private static IllegalArgumentException invalidAllowedPaths(String pluginType, String reason) {
-        return new IllegalArgumentException("Invalid `" + WorkingDirFileSystem.ALLOWED_PATHS + "` plugin configuration for `" + pluginType + "`: " + reason + ".");
     }
 
     private String pluginType() {

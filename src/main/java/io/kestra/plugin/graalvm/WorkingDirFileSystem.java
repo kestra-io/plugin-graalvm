@@ -53,15 +53,29 @@ public final class WorkingDirFileSystem implements FileSystem {
             try {
                 realPath = allowedPath.toRealPath();
             } catch (NoSuchFileException e) {
-                throw new IllegalArgumentException("The directory '" + allowedPath + "' from the `" + ALLOWED_PATHS + "` plugin configuration of `" + pluginType + "` does not exist.", e);
+                throw invalidAllowedPaths(pluginType, "the directory '" + allowedPath + "' does not exist", e);
+            } catch (IOException e) {
+                throw invalidAllowedPaths(pluginType, "the directory '" + allowedPath + "' cannot be accessed by the worker", e);
             }
             if (!Files.isDirectory(realPath)) {
-                throw new IllegalArgumentException("The path '" + allowedPath + "' from the `" + ALLOWED_PATHS + "` plugin configuration of `" + pluginType + "` is not a directory.");
+                throw invalidAllowedPaths(pluginType, "'" + allowedPath + "' is not a directory", null);
+            }
+            // worker working directories share a parent, so this would let scripts read the files of every other task
+            if (root.startsWith(realPath)) {
+                throw invalidAllowedPaths(pluginType, "the directory '" + allowedPath + "' contains the task working directory '" + root + "', which would expose the files of other tasks. Allow a narrower directory instead", null);
+            }
+            // the working directory is writable, so a directory inside it could not be read-only
+            if (realPath.startsWith(root)) {
+                throw invalidAllowedPaths(pluginType, "the directory '" + allowedPath + "' is inside the task working directory '" + root + "', which scripts can already access", null);
             }
             readOnlyRoots.add(realPath);
             addPathsTo(realPath, allowedPath);
         }
         this.currentWorkingDirectory = this.root;
+    }
+
+    static IllegalArgumentException invalidAllowedPaths(String pluginType, String reason, Throwable cause) {
+        return new IllegalArgumentException("Invalid `" + ALLOWED_PATHS + "` plugin configuration for `" + pluginType + "`: " + reason + ".", cause);
     }
 
     private void addPathsTo(Path realPath, Path givenPath) throws IOException {

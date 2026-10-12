@@ -39,11 +39,15 @@ kestra:
 ```
 
 Each entry must be an absolute path to an existing directory, otherwise the task fails before the script runs.
-Scripts can then read the files directly, for example `open('/mnt/data/events.csv')` in Python.
+Scripts can then read the files directly, for example `open('/mnt/data/events.csv')` in Python or `load('/mnt/data/lib.js')` in JavaScript.
+Ruby scripts can `load` or `require` Ruby files from an allowed directory.
+Ruby's own `File` and `Dir` APIs are not available in these tasks, so reading a data file from Ruby takes another language, for example `Polyglot.eval('python', "open('/mnt/data/events.csv').read()")`.
 Scripts cannot read the plugin configuration itself.
 
 Only allow directories that every flow using these task types may read.
-In particular, do not allow a parent of the worker's working directories (such as the worker temporary directory), or scripts could read the files of other tasks.
+A directory that contains the task working directory (such as `/` or the worker temporary directory) is rejected and the task fails before the script runs, because scripts could read the files of other tasks through it.
+Other broad or sensitive directories are not detected, so never allow Kestra's storage or configuration directories.
+`allowed-paths` is not a hard isolation boundary for the Python tasks: native code such as `ctypes` or `sqlite3` is not bound by it or by its read-only guarantee, see the security note on the Python tasks below.
 The global `kestra.local-files.allowed-paths` setting does not apply to these tasks: it only covers `file://` URIs in inputs and functions.
 
 ## Tasks

@@ -25,7 +25,7 @@ import org.graalvm.polyglot.Value;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline Ruby with GraalVM",
-    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them. The bundled standard library is read-only for scripts. Operators can let scripts read extra host directories, read-only, with the `allowed-paths` plugin configuration of this task type."
+    description = "Runs inline Ruby inside the task JVM via GraalVM. Import `runContext`, `logger`, and rendered variables with `Polyglot.import`; declare names in `outputs` to return them. The bundled standard library is read-only for scripts. Operators can let scripts read extra host directories, read-only, with the `allowed-paths` plugin configuration of this task type: scripts can `load` or `require` Ruby files from them, but Ruby's own `File` and `Dir` APIs are not available, so reading a data file takes another language through `Polyglot.eval`."
 )
 @Plugin(
     examples = {

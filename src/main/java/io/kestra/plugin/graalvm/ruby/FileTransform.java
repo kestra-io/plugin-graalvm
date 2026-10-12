@@ -25,7 +25,7 @@ import org.graalvm.polyglot.Value;
 @NoArgsConstructor
 @Schema(
     title = "Transform rows with Ruby on GraalVM",
-    description = "Streams rows from `from` (kestra:// URI, map, or list), lets Ruby mutate `row` via `Polyglot.import`, and writes the result as an ION file. Set `concurrent` to parallelize (order not preserved). Export `row = nil` to drop a record; use `rows` array to emit multiples. File access is limited to the task working directory. Operators can let scripts read extra host directories, read-only, with the `allowed-paths` plugin configuration of this task type."
+    description = "Streams rows from `from` (kestra:// URI, map, or list), lets Ruby mutate `row` via `Polyglot.import`, and writes the result as an ION file. Set `concurrent` to parallelize (order not preserved). Export `row = nil` to drop a record; use `rows` array to emit multiples. File access is limited to the task working directory and to the extra host directories, read-only, that operators list in the `allowed-paths` plugin configuration of this task type: scripts can `load` or `require` Ruby files from them, but Ruby's own `File` and `Dir` APIs are not available, so reading a data file takes another language through `Polyglot.eval`."
 )
 @Plugin(
     examples = {
