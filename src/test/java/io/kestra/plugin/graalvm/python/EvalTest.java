@@ -485,4 +485,53 @@ class EvalTest {
         var runOutput = task.run(runContext);
         assertThat(runOutput.getOutputs().get("result"), is(0));
     }
+
+    @Test
+    void rejectUnsupportedPythonObjectOutput() {
+        // Regression test for GitHub Issue #15: Python datetime.datetime objects with circular
+        // references or complex member structures caused infinite recursion in AbstractEval.as().
+        // The fix detects unsupported objects and provides a clear error message instead of a
+        // massive stack trace.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("""
+                import datetime
+                data = datetime.datetime.now()
+                """))
+            .outputs(Property.ofValue(List.of("data")))
+            .build();
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
+        assertThat(exception.getMessage(), allOf(
+            containsString("data"),
+            containsString("cannot be converted")
+        ));
+    }
+
+    @Test
+    void supportedOutputTypesStillWork() throws Exception {
+        // Regression test: ensure the fix doesn't break existing supported output types.
+        RunContext runContext = runContextFactory.of();
+
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("""
+                num = 42
+                text = "hello"
+                pi = 3.14
+                data_map = {"key": "value", "count": 10}
+                """))
+            .outputs(Property.ofValue(List.of("num", "text", "pi", "data_map")))
+            .build();
+
+        var runOutput = task.run(runContext);
+        assertThat(runOutput.getOutputs().get("num"), is(42));
+        assertThat(runOutput.getOutputs().get("text"), is("hello"));
+        assertThat(runOutput.getOutputs().get("pi"), is(3.14));
+        assertThat(runOutput.getOutputs().get("data_map"), is(Map.of("key", "value", "count", 10)));
+    }
 }

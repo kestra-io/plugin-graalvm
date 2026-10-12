@@ -84,17 +84,26 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         Map<String, Object> outputs = new HashMap<>();
 
         if (value.hasHashEntries()) {
-            Map<String, Object> results = (Map<String, Object>) as(value);
-            renderedOutputs.forEach(s -> outputs.put(s, as(value.getHashValue(s))));
+            Map<String, Object> results = (Map<String, Object>) as(value, 0, null);
+            renderedOutputs.forEach(s -> outputs.put(s, as(value.getHashValue(s), 0, s)));
             return results;
         } else {
-            renderedOutputs.forEach(s -> outputs.put(s, as(value.getMember(s))));
+            renderedOutputs.forEach(s -> outputs.put(s, as(value.getMember(s), 0, s)));
         }
 
         return outputs;
     }
 
-    private Object as(Value member) {
+    private Object as(Value member, int depth, String outputName) {
+        // Prevent infinite recursion on circular references or complex objects
+        final int MAX_DEPTH = 100;
+        if (depth > MAX_DEPTH) {
+            String message = "Output" + (outputName != null ? " '" + outputName + "'" : "") +
+                " cannot be converted: object structure is too deeply nested (depth > " + MAX_DEPTH + "). " +
+                "Consider converting the value to a simpler type (e.g., string, number, list, or dict) in your script.";
+            throw new IllegalArgumentException(message);
+        }
+
         if (member == null) {
             return null;
         }
@@ -124,7 +133,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
             Value iterator = member.getHashEntriesIterator();
             while (iterator.hasIteratorNextElement()) {
                 Value value = iterator.getIteratorNextElement();
-                values.put(value.getArrayElement(0).asString(), as(value.getArrayElement(1)));
+                values.put(value.getArrayElement(0).asString(), as(value.getArrayElement(1), depth + 1, outputName));
             }
             return values;
         }
@@ -132,7 +141,7 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
             // try to read members into a map
             Map<String, Object> values = new HashMap<>();
             member.getMemberKeys().forEach(key -> {
-                values.put(key, as(member.getMember(key)));
+                values.put(key, as(member.getMember(key), depth + 1, outputName));
             });
             return values;
         }
