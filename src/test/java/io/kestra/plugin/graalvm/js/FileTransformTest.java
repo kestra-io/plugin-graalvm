@@ -98,18 +98,59 @@ public class FileTransformTest {
                 """), is(List.of("{id=2}")));
     }
 
-    // runs the script on the rows {id=1} and {id=2}, and returns the output rows as strings
+    @Test
+    void columnsReordersOutput() throws Exception {
+        assertThat(transform("""
+                row['c'] = 3;
+                row['b'] = 2;
+                row['a'] = 1;
+                """, List.of("a", "b", "c", "id")),
+            is(List.of("{a=1, b=2, c=3, id=1}", "{a=1, b=2, c=3, id=2}")));
+    }
+
+    @Test
+    void columnsPartialOverlap() throws Exception {
+        assertThat(transform("""
+                row['x'] = 99;
+                """, List.of("x", "id")),
+            is(List.of("{x=99, id=1}", "{x=99, id=2}")));
+    }
+
+    @Test
+    void columnsWithUnlistedKeysAppended() throws Exception {
+        assertThat(transform("""
+                row['extra'] = 'e';
+                """, List.of("id")),
+            is(List.of("{id=1, extra=e}", "{id=2, extra=e}")));
+    }
+
+    @Test
+    void noColumnsPreservesOriginalBehavior() throws Exception {
+        assertThat(transform("""
+                row['z'] = 0;
+                """),
+            is(List.of("{id=1, z=0}", "{id=2, z=0}")));
+    }
+
     private List<String> transform(String script) throws Exception {
+        return transform(script, null);
+    }
+
+    private List<String> transform(String script, List<String> columns) throws Exception {
         var input = new ByteArrayOutputStream();
         FileSerde.writeAll(input, Flux.just(new LinkedHashMap<>(Map.of("id", 1)), new LinkedHashMap<>(Map.of("id", 2)))).block();
         var uri = storageInterface.put(TenantService.MAIN_TENANT, null, new URI("/" + IdUtils.create() + ".ion"), new ByteArrayInputStream(input.toByteArray()));
 
-        var output = FileTransform.builder()
+        var builder = FileTransform.builder()
             .id("fileTransform")
             .from(Property.ofValue(uri.toString()))
-            .script(Property.ofValue(script))
-            .build()
-            .run(runContextFactory.of());
+            .script(Property.ofValue(script));
+
+        if (columns != null) {
+            builder.columns(Property.ofValue(columns));
+        }
+
+        var output = builder.build().run(runContextFactory.of());
 
         try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
             List<Object> result = new ArrayList<>();
