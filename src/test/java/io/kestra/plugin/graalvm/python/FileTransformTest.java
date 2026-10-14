@@ -84,7 +84,7 @@ public class FileTransformTest {
         var fileTransform = FileTransform.builder()
             .id("fileTransform")
             .from(Property.ofValue("{\"title\": \"Main_Page\"}"))
-            .script(Property.ofValue("row['secret'] = open('%s').read()".formatted(secret)))
+            .script(Property.ofValue("row['secret'] = open('%s').read()".formatted(secret.toString().replace("\\", "/"))))
             .build();
 
         var exception = assertThrows(PolyglotException.class, () -> fileTransform.run(runContextFactory.of()));
