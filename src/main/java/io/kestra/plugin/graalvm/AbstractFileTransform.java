@@ -59,7 +59,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             "Any columns present in the row but not listed here are appended after the listed columns in their original order. " +
             "This is useful when downstream tasks (e.g. JDBC Batch) depend on a predictable column order."
     )
-    @PluginProperty
+    @PluginProperty(group = "processing")
     private Property<List<String>> columns;
 
     @SuppressWarnings("unchecked")

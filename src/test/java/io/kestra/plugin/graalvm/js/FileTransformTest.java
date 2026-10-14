@@ -132,6 +132,79 @@ public class FileTransformTest {
             is(List.of("{id=1, z=0}", "{id=2, z=0}")));
     }
 
+    @Test
+    void emptyColumnsListPreservesOriginalOrder() throws Exception {
+        assertThat(transform("""
+                row['z'] = 0;
+                row['a'] = 9;
+                """, List.of()),
+            is(List.of("{id=1, z=0, a=9}", "{id=2, z=0, a=9}")));
+    }
+
+    @Test
+    void columnDoesNotExistInOutput() throws Exception {
+        assertThat(transform("""
+                row['a'] = 1;
+                """, List.of("missing", "a", "nonexistent", "id")),
+            is(List.of("{a=1, id=1}", "{a=1, id=2}")));
+    }
+
+    @Test
+    void duplicateColumnsInConfiguration() throws Exception {
+        assertThat(transform("""
+                row['b'] = 2;
+                row['a'] = 1;
+                """, List.of("a", "a", "id", "id", "b")),
+            is(List.of("{a=1, id=1, b=2}", "{a=1, id=2, b=2}")));
+    }
+
+    @Test
+    void severalUnlistedColumnsOriginalOrderPreserved() throws Exception {
+        var input = new ByteArrayOutputStream();
+        var row1 = new LinkedHashMap<String, Object>();
+        row1.put("first", 1);
+        row1.put("second", 2);
+        row1.put("target", 3);
+        row1.put("fourth", 4);
+        row1.put("fifth", 5);
+
+        FileSerde.writeAll(input, Flux.just(row1)).block();
+        var uri = storageInterface.put(TenantService.MAIN_TENANT, null, new URI("/" + IdUtils.create() + ".ion"), new ByteArrayInputStream(input.toByteArray()));
+
+        var output = FileTransform.builder()
+            .id("fileTransform")
+            .from(Property.ofValue(uri.toString()))
+            .columns(Property.ofValue(List.of("target")))
+            .script(Property.ofValue(""))
+            .build()
+            .run(runContextFactory.of());
+
+        try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
+            List<Object> result = new ArrayList<>();
+            FileSerde.read(ionIs, result::add);
+            assertThat(result.stream().map(String::valueOf).toList(),
+                is(List.of("{target=3, first=1, second=2, fourth=4, fifth=5}")));
+        }
+    }
+
+    @Test
+    void columnsWithInlineJsonInput() throws Exception {
+        var output = FileTransform.builder()
+            .id("fileTransform")
+            .from(Property.ofValue("[{\"z\": 10, \"y\": 20, \"x\": 30}]"))
+            .columns(Property.ofValue(List.of("x", "z")))
+            .script(Property.ofValue(""))
+            .build()
+            .run(runContextFactory.of());
+
+        try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
+            List<Object> result = new ArrayList<>();
+            FileSerde.read(ionIs, result::add);
+            assertThat(result.stream().map(String::valueOf).toList(),
+                is(List.of("{x=30, z=10, y=20}")));
+        }
+    }
+
     private List<String> transform(String script) throws Exception {
         return transform(script, null);
     }
