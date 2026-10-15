@@ -48,6 +48,35 @@
 - Provides plugin components under `io.kestra.plugin.graalvm`.
 - Includes classes such as `SLF4JJULHandler`, `RunContextProxy`, `LogRunnable`, `FileTransform`.
 
+## Configuration
+
+Scripts can only access files inside the task working directory.
+Operators can let scripts read other host directories, for example a data volume mounted on the worker, with the `allowed-paths` plugin configuration.
+Allowed directories are read-only for scripts.
+
+Plugin configuration is matched on the exact task type, so add one entry for each task type that needs access:
+
+```yaml
+kestra:
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.graalvm.python.Eval
+        values:
+          allowed-paths:
+            - /mnt/data
+      - type: io.kestra.plugin.graalvm.python.FileTransform
+        values:
+          allowed-paths:
+            - /mnt/data
+```
+
+Each entry must be an absolute path to an existing directory.
+A directory that contains the task working directory (such as `/` or the worker temporary directory) is rejected, because scripts could read the files of other tasks through it.
+Other broad or sensitive directories are not detected, so only allow directories that every flow using these task types may read.
+Ruby scripts can `load` or `require` Ruby files from an allowed directory, but Ruby's own `File` and `Dir` APIs are not available in these tasks, so reading a data file from Ruby takes another language through `Polyglot.eval`.
+`allowed-paths` is not a hard isolation boundary for the Python tasks: native code such as `ctypes` or `sqlite3` is not bound by it or by its read-only guarantee, see the security note in the description of the Python tasks.
+The global `kestra.local-files.allowed-paths` setting does not apply to these tasks.
+
 ## Documentation
 * Full documentation can be found under: [kestra.io/docs](https://kestra.io/docs)
 * Documentation for developing a plugin is included in the [Plugin Developer Guide](https://kestra.io/docs/plugin-developer-guide/)

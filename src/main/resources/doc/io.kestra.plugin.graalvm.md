@@ -16,6 +16,40 @@ To store a file in Kestra's internal storage, pass its content as a stream: `run
 
 Python native modules are the exception, see the security note on the Python tasks below.
 
+### Allowing scripts to read other directories
+
+Operators can let scripts read host directories outside the working directory, for example a data volume mounted on the worker, with the `allowed-paths` plugin configuration.
+Allowed directories are read-only for scripts: writing, deleting, renaming or creating files inside them fails with a permission error.
+The same protections as for the working directory apply, so `..` or a symbolic link cannot reach anything outside an allowed directory.
+
+Plugin configuration is matched on the exact task type, so add one entry for each task type that needs access:
+
+```yaml
+kestra:
+  plugins:
+    configurations:
+      - type: io.kestra.plugin.graalvm.python.Eval
+        values:
+          allowed-paths:
+            - /mnt/data
+      - type: io.kestra.plugin.graalvm.python.FileTransform
+        values:
+          allowed-paths:
+            - /mnt/data
+```
+
+Each entry must be an absolute path to an existing directory, otherwise the task fails before the script runs.
+Scripts can then read the files directly, for example `open('/mnt/data/events.csv')` in Python or `load('/mnt/data/lib.js')` in JavaScript.
+Ruby scripts can `load` or `require` Ruby files from an allowed directory.
+Ruby's own `File` and `Dir` APIs are not available in these tasks, so reading a data file from Ruby takes another language, for example `Polyglot.eval('python', "open('/mnt/data/events.csv').read()")`.
+Scripts cannot read the plugin configuration itself.
+
+Only allow directories that every flow using these task types may read.
+A directory that contains the task working directory (such as `/` or the worker temporary directory) is rejected and the task fails before the script runs, because scripts could read the files of other tasks through it.
+Other broad or sensitive directories are not detected, so never allow Kestra's storage or configuration directories.
+`allowed-paths` is not a hard isolation boundary for the Python tasks: native code such as `ctypes` or `sqlite3` is not bound by it or by its read-only guarantee, see the security note on the Python tasks below.
+The global `kestra.local-files.allowed-paths` setting does not apply to these tasks: it only covers `file://` URIs in inputs and functions.
+
 ## Tasks
 
 ### JavaScript
