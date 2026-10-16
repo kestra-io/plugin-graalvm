@@ -24,7 +24,6 @@ import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -55,9 +54,10 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
 
     @Schema(
         title = "Columns to include in the output and their order",
-        description = "When set, each output row is reordered so that the columns listed here appear first, in the specified order. " +
-            "Any columns present in the row but not listed here are appended after the listed columns in their original order. " +
-            "This is useful when downstream tasks (e.g. JDBC Batch) depend on a predictable column order."
+        description = "When set, each output row contains exactly these columns in the specified order. " +
+            "A column that is not present in a given row is written as null so that every row has the same shape. " +
+            "Columns present in the row but not listed here are dropped. " +
+            "This is useful when downstream tasks (e.g. JDBC Batch) depend on a fixed column count and order."
     )
     @PluginProperty(group = "processing")
     private Property<List<String>> columns;
@@ -65,6 +65,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     @SuppressWarnings("unchecked")
     protected Output run(RunContext runContext, String languageId) throws Exception {
         String from = runContext.render(this.from).as(String.class).orElseThrow();
+        // temp out file
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         var source = generateSource(languageId, runContext);
         List<String> resolvedColumns = this.columns != null
@@ -119,6 +120,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         Thread stdOut = null;
         Thread stdErr = null;
 
+        // watch for logs from output streams in separated threads
         try (var outStream = new PipedOutputStream();
              var inStream = new PipedInputStream(outStream);
              var errStream = new PipedOutputStream();
@@ -143,9 +145,10 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             }
 
             if (resolvedColumns != null && !resolvedColumns.isEmpty()) {
-                sequential = sequential.map(row -> reorderColumns(row, resolvedColumns));
+                sequential = sequential.map(row -> filterColumns(row, resolvedColumns));
             }
 
+            // metrics & finalize
             Mono<Long> count = FileSerde.writeAll(output, sequential);
 
             Long lineCount = count.blockOptional().orElse(0L);
@@ -161,22 +164,14 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     }
 
     @SuppressWarnings("unchecked")
-    private static Object reorderColumns(Object row, List<String> columns) {
+    private static Object filterColumns(Object row, List<String> columns) {
         if (!(row instanceof Map)) {
             return row;
         }
         Map<String, Object> original = (Map<String, Object>) row;
-        LinkedHashMap<String, Object> ordered = new LinkedHashMap<>(original.size());
+        LinkedHashMap<String, Object> ordered = new LinkedHashMap<>(columns.size());
         for (String col : columns) {
-            if (original.containsKey(col)) {
-                ordered.put(col, original.get(col));
-            }
-        }
-        LinkedHashSet<String> columnSet = new LinkedHashSet<>(columns);
-        for (Map.Entry<String, Object> entry : original.entrySet()) {
-            if (!columnSet.contains(entry.getKey())) {
-                ordered.put(entry.getKey(), entry.getValue());
-            }
+            ordered.put(col, original.get(col));
         }
         return ordered;
     }

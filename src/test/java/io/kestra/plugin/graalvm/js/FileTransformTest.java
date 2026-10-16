@@ -117,11 +117,11 @@ public class FileTransformTest {
     }
 
     @Test
-    void columnsWithUnlistedKeysAppended() throws Exception {
+    void columnsIncludesOnlyListedColumns() throws Exception {
         assertThat(transform("""
                 row['extra'] = 'e';
                 """, List.of("id")),
-            is(List.of("{id=1, extra=e}", "{id=2, extra=e}")));
+            is(List.of("{id=1}", "{id=2}")));
     }
 
     @Test
@@ -142,11 +142,11 @@ public class FileTransformTest {
     }
 
     @Test
-    void columnDoesNotExistInOutput() throws Exception {
+    void missingColumnWrittenAsNull() throws Exception {
         assertThat(transform("""
                 row['a'] = 1;
-                """, List.of("missing", "a", "nonexistent", "id")),
-            is(List.of("{a=1, id=1}", "{a=1, id=2}")));
+                """, List.of("missing", "a", "id")),
+            is(List.of("{missing=null, a=1, id=1}", "{missing=null, a=1, id=2}")));
     }
 
     @Test
@@ -159,7 +159,7 @@ public class FileTransformTest {
     }
 
     @Test
-    void severalUnlistedColumnsOriginalOrderPreserved() throws Exception {
+    void onlyListedColumnsIncludedFromMultiColumnRow() throws Exception {
         var input = new ByteArrayOutputStream();
         var row1 = new LinkedHashMap<String, Object>();
         row1.put("first", 1);
@@ -183,7 +183,7 @@ public class FileTransformTest {
             List<Object> result = new ArrayList<>();
             FileSerde.read(ionIs, result::add);
             assertThat(result.stream().map(String::valueOf).toList(),
-                is(List.of("{target=3, first=1, second=2, fourth=4, fifth=5}")));
+                is(List.of("{target=3}")));
         }
     }
 
@@ -201,7 +201,7 @@ public class FileTransformTest {
             List<Object> result = new ArrayList<>();
             FileSerde.read(ionIs, result::add);
             assertThat(result.stream().map(String::valueOf).toList(),
-                is(List.of("{x=30, z=10, y=20}")));
+                is(List.of("{x=30, z=10}")));
         }
     }
 

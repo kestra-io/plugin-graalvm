@@ -54,6 +54,24 @@ import lombok.experimental.SuperBuilder;
                     row['totalItems'] = row['totalProducts'] * row['totalQuantity']
                   }
             """
+        ),
+        @Example(
+            title = "Transform rows and control output column order for downstream tasks",
+            full = true,
+            code = """
+            id: transformJsColumns
+            namespace: company.team
+
+            tasks:
+              - id: transform
+                type: io.kestra.plugin.graalvm.js.FileTransform
+                from: "{{ outputs.extract.uri }}"
+                columns:
+                  - id
+                  - totalItems
+                script: |
+                  row['totalItems'] = row['totalProducts'] * row['totalQuantity'];
+            """
         )
     },
     metrics = {
