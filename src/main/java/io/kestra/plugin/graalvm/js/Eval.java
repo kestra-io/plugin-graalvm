@@ -23,7 +23,7 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Execute inline JavaScript with GraalVM",
-    description = "Runs inline JavaScript inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them."
+    description = "Runs inline JavaScript inside the task JVM via GraalVM. Access `runContext`, `logger`, and rendered variables from the bindings; declare names in `outputs` to return them. File access is limited to the task working directory. Operators can let scripts read extra host directories, read-only, with the `allowed-paths` plugin configuration of this task type."
 )
 @Plugin(
     examples = {
