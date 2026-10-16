@@ -84,7 +84,7 @@ public class FileTransformTest {
         var fileTransform = FileTransform.builder()
             .id("fileTransform")
             .from(Property.ofValue("{\"title\": \"Main_Page\"}"))
-            .script(Property.ofValue("row['secret'] = open('%s').read()".formatted(secret)))
+            .script(Property.ofValue("row['secret'] = open('%s').read()".formatted(secret.toString().replace("\\", "/"))))
             .build();
 
         var exception = assertThrows(PolyglotException.class, () -> fileTransform.run(runContextFactory.of()));
@@ -115,18 +115,35 @@ public class FileTransformTest {
         assertThat(exception.getMessage(), containsString("`rows` must be a list of rows"));
     }
 
+    @Test
+    void columnsControlsOutputOrder() throws Exception {
+        assertThat(transform("""
+                row['status'] = True
+                row['value'] = 42
+                """, List.of("status", "id")),
+            is(List.of("{status=true, id=1}", "{status=true, id=2}")));
+    }
+
     // runs the script on the rows {id=1} and {id=2}, and returns the output rows as strings
     private List<String> transform(String script) throws Exception {
+        return transform(script, null);
+    }
+
+    private List<String> transform(String script, List<String> columns) throws Exception {
         var input = new ByteArrayOutputStream();
         FileSerde.writeAll(input, Flux.just(new LinkedHashMap<>(Map.of("id", 1)), new LinkedHashMap<>(Map.of("id", 2)))).block();
         var uri = storageInterface.put(TenantService.MAIN_TENANT, null, new URI("/" + IdUtils.create() + ".ion"), new ByteArrayInputStream(input.toByteArray()));
 
-        var output = FileTransform.builder()
+        var builder = FileTransform.builder()
             .id("fileTransform")
             .from(Property.ofValue(uri.toString()))
-            .script(Property.ofValue(script))
-            .build()
-            .run(runContextFactory.of());
+            .script(Property.ofValue(script));
+
+        if (columns != null) {
+            builder.columns(Property.ofValue(columns));
+        }
+
+        var output = builder.build().run(runContextFactory.of());
 
         try (InputStream ionIs = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, null, output.getUri()), FileSerde.BUFFER_SIZE)) {
             List<Object> result = new ArrayList<>();

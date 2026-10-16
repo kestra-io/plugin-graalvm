@@ -52,6 +52,24 @@ import lombok.experimental.SuperBuilder;
                       row['products'] = None
                       # add a 'totalItems' column
                       row['totalItems'] = row['totalProducts'] * row['totalQuantity']"""
+        ),
+        @Example(
+            title = "Transform rows and control output column order for downstream tasks",
+            full = true,
+            code = """
+              id: transformPythonColumns
+              namespace: company.team
+
+              tasks:
+                - id: transform
+                  type: io.kestra.plugin.graalvm.python.FileTransform
+                  from: "{{ outputs.extract.uri }}"
+                  columns:
+                    - id
+                    - totalItems
+                  script: |
+                    row['totalItems'] = row['totalProducts'] * row['totalQuantity']
+              """
         )
     },
     metrics = {

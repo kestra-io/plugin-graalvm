@@ -23,7 +23,9 @@ import reactor.core.scheduler.Schedulers;
 import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
@@ -50,12 +52,25 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
     )
     private Property<@Min(2) Integer> concurrent;
 
+    @Schema(
+        title = "Columns to include in the output and their order",
+        description = "When set, each output row contains exactly these columns in the specified order. " +
+            "A column that is not present in a given row is written as null so that every row has the same shape. " +
+            "Columns present in the row but not listed here are dropped. " +
+            "This is useful when downstream tasks (e.g. JDBC Batch) depend on a fixed column count and order."
+    )
+    @PluginProperty(group = "processing")
+    private Property<List<String>> columns;
+
     @SuppressWarnings("unchecked")
     protected Output run(RunContext runContext, String languageId) throws Exception {
-        // temp out file
         String from = runContext.render(this.from).as(String.class).orElseThrow();
+        // temp out file
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         var source = generateSource(languageId, runContext);
+        List<String> resolvedColumns = this.columns != null
+            ? runContext.render(this.columns).asList(String.class)
+            : null;
 
         try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
             if (from.startsWith("kestra://")) {
@@ -64,7 +79,8 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
                             runContext,
                             FileSerde.readAll(inputStream),
                             source,
-                            output
+                            output,
+                            resolvedColumns
                     );
                 }
             } else {
@@ -82,7 +98,8 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
                             emitter.complete();
                         }), FluxSink.OverflowStrategy.BUFFER),
                         source,
-                        output
+                        output,
+                        resolvedColumns
                 );
             }
         }
@@ -97,17 +114,18 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         RunContext runContext,
         Flux<Object> flowable,
         Source scripts,
-        OutputStream output
+        OutputStream output,
+        List<String> resolvedColumns
     ) throws IOException, IllegalVariableEvaluationException, InterruptedException {
         Thread stdOut = null;
         Thread stdErr = null;
 
+        // watch for logs from output streams in separated threads
         try (var outStream = new PipedOutputStream();
              var inStream = new PipedInputStream(outStream);
              var errStream = new PipedOutputStream();
              var inErrStream = new PipedInputStream(errStream);
              var context = buildContext(runContext, outStream, errStream)) {
-            // watch for logs from output streams in separated threads
             LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
             LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
             stdOut = Thread.ofVirtual().name("graalvm-log-out").start(stdOutRunnable);
@@ -126,9 +144,13 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
                         .flatMap(this.convert(runContext, context, scripts));
             }
 
-            Mono<Long> count = FileSerde.writeAll(output, sequential);
+            if (resolvedColumns != null && !resolvedColumns.isEmpty()) {
+                sequential = sequential.map(row -> filterColumns(row, resolvedColumns));
+            }
 
             // metrics & finalize
+            Mono<Long> count = FileSerde.writeAll(output, sequential);
+
             Long lineCount = count.blockOptional().orElse(0L);
             runContext.metric(Counter.of("records", lineCount));
         } finally  {
@@ -139,6 +161,19 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
                 stdErr.join();
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object filterColumns(Object row, List<String> columns) {
+        if (!(row instanceof Map)) {
+            return row;
+        }
+        Map<String, Object> original = (Map<String, Object>) row;
+        LinkedHashMap<String, Object> ordered = new LinkedHashMap<>(columns.size());
+        for (String col : columns) {
+            ordered.put(col, original.get(col));
+        }
+        return ordered;
     }
 
     private Function<Object, Publisher<Object>> convert(RunContext runContext, Context context, Source scripts) {
