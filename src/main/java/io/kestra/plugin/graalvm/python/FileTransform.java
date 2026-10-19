@@ -61,9 +61,15 @@ import lombok.experimental.SuperBuilder;
               namespace: company.team
 
               tasks:
+                - id: download
+                  type: io.kestra.plugin.core.http.Download
+                  uri: https://dummyjson.com/carts/1
+                - id: jsonToIon
+                  type: io.kestra.plugin.serdes.json.JsonToIon
+                  from: "{{outputs.download.uri}}"
                 - id: transform
                   type: io.kestra.plugin.graalvm.python.FileTransform
-                  from: "{{ outputs.extract.uri }}"
+                  from: "{{ outputs.jsonToIon.uri }}"
                   columns:
                     - id
                     - totalItems
