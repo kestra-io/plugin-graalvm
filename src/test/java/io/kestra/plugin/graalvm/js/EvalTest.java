@@ -7,6 +7,7 @@ import io.kestra.core.runners.RunContextFactory;
 import jakarta.inject.Inject;
 import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -293,5 +294,19 @@ class EvalTest {
         assertThat((Map<String, Object>) runOutput.getOutputs().get("map"), aMapWithSize(1));
         assertThat(((Map<String, Object>) runOutput.getOutputs().get("map")).get("test"), is("here"));
         assertThat(((URI) runOutput.getOutputs().get("out")).toString(), startsWith("kestra:///"));
+    }
+
+    // Top-level output well over the pipe buffer, printed during eval: the log readers must already be draining.
+    @Test
+    @Timeout(60)
+    void largeOutputDuringEval() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("""
+            for (var i = 1; i <= 20000; i++) {
+                console.log(i);
+                console.error(i);
+            }""");
+
+        assertThat(task.run(runContext), notNullValue());
     }
 }

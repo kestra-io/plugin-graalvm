@@ -33,10 +33,15 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
         Thread stdErr = null;
 
         try (var outStream = new PipedOutputStream();
-             var inStream = new PipedInputStream(outStream);
+             var inStream = new PipedInputStream(outStream, LogRunnable.PIPE_BUFFER_SIZE);
              var errStream = new PipedOutputStream();
-             var inErrStream = new PipedInputStream(errStream);
+             var inErrStream = new PipedInputStream(errStream, LogRunnable.PIPE_BUFFER_SIZE);
              var context = buildContext(runContext, outStream, errStream)) {
+            // start draining before eval, which can print more than the pipe buffer holds
+            LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
+            LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
+            stdOut = Thread.ofPlatform().daemon().name("graalvm-log-out").start(stdOutRunnable);
+            stdErr = Thread.ofPlatform().daemon().name("graalvm-log-err").start(stdErrRunnable);
 
             var bindings = getBindings(context, languageId);
             // add all common vars to bindings in case of concurrency
@@ -46,12 +51,6 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
 
             var source = generateSource(languageId, runContext);
             var result = context.eval(source);
-
-            // watch for logs from output streams in separated threads
-            LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
-            LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
-            stdOut = Thread.ofVirtual().name("graalvm-log-out").start(stdOutRunnable);
-            stdErr = Thread.ofVirtual().name("graalvm-log-err").start(stdErrRunnable);
 
             var renderedOutputs = runContext.render(this.outputs).asList(String.class);
             Output.OutputBuilder builder = Output.builder();

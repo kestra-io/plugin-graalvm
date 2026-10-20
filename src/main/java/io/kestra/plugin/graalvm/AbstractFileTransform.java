@@ -103,15 +103,15 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         Thread stdErr = null;
 
         try (var outStream = new PipedOutputStream();
-             var inStream = new PipedInputStream(outStream);
+             var inStream = new PipedInputStream(outStream, LogRunnable.PIPE_BUFFER_SIZE);
              var errStream = new PipedOutputStream();
-             var inErrStream = new PipedInputStream(errStream);
+             var inErrStream = new PipedInputStream(errStream, LogRunnable.PIPE_BUFFER_SIZE);
              var context = buildContext(runContext, outStream, errStream)) {
             // watch for logs from output streams in separated threads
             LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
             LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
-            stdOut = Thread.ofVirtual().name("graalvm-log-out").start(stdOutRunnable);
-            stdErr = Thread.ofVirtual().name("graalvm-log-err").start(stdErrRunnable);
+            stdOut = Thread.ofPlatform().daemon().name("graalvm-log-out").start(stdOutRunnable);
+            stdErr = Thread.ofPlatform().daemon().name("graalvm-log-err").start(stdErrRunnable);
 
             Flux<Object> sequential;
 
