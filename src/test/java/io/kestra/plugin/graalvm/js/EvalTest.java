@@ -1,5 +1,7 @@
 package io.kestra.plugin.graalvm.js;
 
+import ch.qos.logback.classic.Level;
+import io.kestra.plugin.graalvm.LogsAssert;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -7,6 +9,7 @@ import io.kestra.core.runners.RunContextFactory;
 import jakarta.inject.Inject;
 import org.graalvm.polyglot.PolyglotException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -293,5 +296,39 @@ class EvalTest {
         assertThat((Map<String, Object>) runOutput.getOutputs().get("map"), aMapWithSize(1));
         assertThat(((Map<String, Object>) runOutput.getOutputs().get("map")).get("test"), is("here"));
         assertThat(((URI) runOutput.getOutputs().get("out")).toString(), startsWith("kestra:///"));
+    }
+
+    // Top-level output well over the pipe buffer, printed during eval: the log readers must already be draining.
+    @Test
+    @Timeout(60)
+    void largeOutputDuringEval() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        Eval task = evalOf("""
+            for (var i = 1; i <= 20000; i++) {
+                console.log(i);
+                console.error(i);
+            }""");
+
+        assertThat(task.run(runContext), notNullValue());
+    }
+
+    // Every line must be logged, not just completion: the tail used to be lost when the pipes were closed before the readers drained them.
+    @Test
+    @Timeout(120)
+    void allLargeOutputIsLogged() throws Exception {
+        int n = 20000;
+        Eval task = evalOf("""
+            for (var i = 1; i <= %d; i++) {
+                console.log('out ' + i);
+                console.error('err ' + i);
+            }""".formatted(n));
+        RunContext runContext = runContextFactory.of();
+
+        try (var logs = new LogsAssert(runContext)) {
+            task.run(runContext);
+
+            logs.assertLines(Level.INFO, "out ", LogsAssert.numbered("out ", 1, n));
+            logs.assertLines(Level.ERROR, "err ", LogsAssert.numbered("err ", 1, n));
+        }
     }
 }
