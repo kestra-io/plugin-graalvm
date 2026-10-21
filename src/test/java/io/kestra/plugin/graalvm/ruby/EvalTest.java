@@ -1,5 +1,8 @@
 package io.kestra.plugin.graalvm.ruby;
 
+import ch.qos.logback.classic.Level;
+import io.kestra.plugin.graalvm.LogsAssert;
+import org.junit.jupiter.api.Timeout;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -111,5 +114,42 @@ class EvalTest {
 
         var exception = assertThrows(PolyglotException.class, () -> task.run(runContext));
         assertThat(exception.getMessage(), message);
+    }
+
+    // TruffleRuby writes its buffered stdout when the context closes, so the readers must outlive the context.
+    @Test
+    @Timeout(120)
+    void allPutsOutputIsLogged() throws Exception {
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("(1..10).each { |i| puts \"out #{i}\" }"))
+            .build();
+        RunContext runContext = runContextFactory.of();
+
+        try (var logs = new LogsAssert(runContext)) {
+            task.run(runContext);
+
+            logs.assertLines(Level.INFO, "out ", LogsAssert.numbered("out ", 1, 10));
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void allLargeOutputIsLogged() throws Exception {
+        int n = 5000;
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("(1..%d).each { |i| puts \"out #{i}\"; warn \"err #{i}\" }".formatted(n)))
+            .build();
+        RunContext runContext = runContextFactory.of();
+
+        try (var logs = new LogsAssert(runContext)) {
+            task.run(runContext);
+
+            logs.assertLines(Level.INFO, "out ", LogsAssert.numbered("out ", 1, n));
+            logs.assertLines(Level.ERROR, "err ", LogsAssert.numbered("err ", 1, n));
+        }
     }
 }

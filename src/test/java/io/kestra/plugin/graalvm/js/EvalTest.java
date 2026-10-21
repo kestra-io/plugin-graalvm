@@ -1,5 +1,7 @@
 package io.kestra.plugin.graalvm.js;
 
+import ch.qos.logback.classic.Level;
+import io.kestra.plugin.graalvm.LogsAssert;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -308,5 +310,25 @@ class EvalTest {
             }""");
 
         assertThat(task.run(runContext), notNullValue());
+    }
+
+    // Every line must be logged, not just completion: the tail used to be lost when the pipes were closed before the readers drained them.
+    @Test
+    @Timeout(120)
+    void allLargeOutputIsLogged() throws Exception {
+        int n = 20000;
+        Eval task = evalOf("""
+            for (var i = 1; i <= %d; i++) {
+                console.log('out ' + i);
+                console.error('err ' + i);
+            }""".formatted(n));
+        RunContext runContext = runContextFactory.of();
+
+        try (var logs = new LogsAssert(runContext)) {
+            task.run(runContext);
+
+            logs.assertLines(Level.INFO, "out ", LogsAssert.numbered("out ", 1, n));
+            logs.assertLines(Level.ERROR, "err ", LogsAssert.numbered("err ", 1, n));
+        }
     }
 }

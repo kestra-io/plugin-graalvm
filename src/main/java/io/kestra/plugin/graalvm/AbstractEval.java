@@ -8,8 +8,6 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.graalvm.polyglot.Value;
 
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,20 +27,9 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
     protected Property<List<String>> outputs;
 
     protected Output run(RunContext runContext, String languageId) throws Exception {
-        Thread stdOut = null;
-        Thread stdErr = null;
-
-        try (var outStream = new PipedOutputStream();
-             var inStream = new PipedInputStream(outStream, LogRunnable.PIPE_BUFFER_SIZE);
-             var errStream = new PipedOutputStream();
-             var inErrStream = new PipedInputStream(errStream, LogRunnable.PIPE_BUFFER_SIZE);
-             var context = buildContext(runContext, outStream, errStream)) {
-            // start draining before eval, which can print more than the pipe buffer holds
-            LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
-            LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
-            stdOut = Thread.ofPlatform().daemon().name("graalvm-log-out").start(stdOutRunnable);
-            stdErr = Thread.ofPlatform().daemon().name("graalvm-log-err").start(stdErrRunnable);
-
+        // declared first so it closes last: the context flush on close must still reach the readers
+        try (var logs = new ScriptLogs(runContext.logger());
+             var context = buildContext(runContext, logs.out(), logs.err())) {
             var bindings = getBindings(context, languageId);
             // add all common vars to bindings in case of concurrency
             runContext.getVariables().forEach(bindings::putMember);
@@ -68,13 +55,6 @@ public abstract class AbstractEval extends AbstractScript implements RunnableTas
             }
 
             return builder.build();
-        } finally  {
-            if (stdOut != null) {
-                stdOut.join();
-            }
-            if (stdErr != null) {
-                stdErr.join();
-            }
         }
     }
 

@@ -1,5 +1,8 @@
 package io.kestra.plugin.graalvm.python;
 
+import ch.qos.logback.classic.Level;
+import io.kestra.plugin.graalvm.LogsAssert;
+import org.junit.jupiter.api.Timeout;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -533,5 +536,30 @@ class EvalTest {
         assertThat(runOutput.getOutputs().get("text"), is("hello"));
         assertThat(runOutput.getOutputs().get("pi"), is(3.14));
         assertThat(runOutput.getOutputs().get("data_map"), is(Map.of("key", "value", "count", 10)));
+    }
+
+    // Every line must be logged, not just completion: the tail used to be lost when the pipes were closed before the readers drained them.
+    @Test
+    @Timeout(120)
+    void allLargeOutputIsLogged() throws Exception {
+        int n = 5000;
+        Eval task = Eval.builder()
+            .id("unit-test")
+            .type(Eval.class.getName())
+            .script(Property.ofValue("""
+                import sys
+                for i in range(1, %d + 1):
+                    print('out ' + str(i))
+                    print('err ' + str(i), file=sys.stderr)
+                """.formatted(n)))
+            .build();
+        RunContext runContext = runContextFactory.of();
+
+        try (var logs = new LogsAssert(runContext)) {
+            task.run(runContext);
+
+            logs.assertLines(Level.INFO, "out ", LogsAssert.numbered("out ", 1, n));
+            logs.assertLines(Level.ERROR, "err ", LogsAssert.numbered("err ", 1, n));
+        }
     }
 }
