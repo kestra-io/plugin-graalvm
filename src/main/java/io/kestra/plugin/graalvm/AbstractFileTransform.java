@@ -57,6 +57,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         description = "When set, each output row contains exactly these columns in the specified order. " +
             "A column that is not present in a given row is written as null so that every row has the same shape. " +
             "Columns present in the row but not listed here are dropped. " +
+            "When not set or empty, rows are written as is. " +
             "This is useful when downstream tasks (e.g. JDBC Batch) depend on a fixed column count and order."
     )
     @PluginProperty(group = "processing")
