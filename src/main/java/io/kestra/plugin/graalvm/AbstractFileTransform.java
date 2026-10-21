@@ -99,20 +99,9 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         Source scripts,
         OutputStream output
     ) throws IOException, IllegalVariableEvaluationException, InterruptedException {
-        Thread stdOut = null;
-        Thread stdErr = null;
-
-        try (var outStream = new PipedOutputStream();
-             var inStream = new PipedInputStream(outStream);
-             var errStream = new PipedOutputStream();
-             var inErrStream = new PipedInputStream(errStream);
-             var context = buildContext(runContext, outStream, errStream)) {
-            // watch for logs from output streams in separated threads
-            LogRunnable stdOutRunnable = new LogRunnable(inStream, false, runContext.logger());
-            LogRunnable stdErrRunnable = new LogRunnable(inErrStream, true, runContext.logger());
-            stdOut = Thread.ofVirtual().name("graalvm-log-out").start(stdOutRunnable);
-            stdErr = Thread.ofVirtual().name("graalvm-log-err").start(stdErrRunnable);
-
+        // declared first so it closes last: the context flush on close must still reach the readers
+        try (var logs = new ScriptLogs(runContext.logger());
+             var context = buildContext(runContext, logs.out(), logs.err())) {
             Flux<Object> sequential;
 
             if (this.concurrent != null) {
@@ -131,13 +120,6 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             // metrics & finalize
             Long lineCount = count.blockOptional().orElse(0L);
             runContext.metric(Counter.of("records", lineCount));
-        } finally  {
-            if (stdOut != null) {
-                stdOut.join();
-            }
-            if (stdErr != null) {
-                stdErr.join();
-            }
         }
     }
 
