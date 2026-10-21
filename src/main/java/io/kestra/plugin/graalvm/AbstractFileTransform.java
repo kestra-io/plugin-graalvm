@@ -68,9 +68,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
         // temp out file
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         var source = generateSource(languageId, runContext);
-        List<String> resolvedColumns = this.columns != null
-            ? runContext.render(this.columns).asList(String.class)
-            : null;
+        List<String> resolvedColumns = runContext.render(this.columns).asList(String.class);
 
         try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
             if (from.startsWith("kestra://")) {
@@ -144,7 +142,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
                         .flatMap(this.convert(runContext, context, scripts));
             }
 
-            if (resolvedColumns != null && !resolvedColumns.isEmpty()) {
+            if (!resolvedColumns.isEmpty()) {
                 sequential = sequential.map(row -> filterColumns(row, resolvedColumns));
             }
 
@@ -169,7 +167,7 @@ public abstract class AbstractFileTransform extends AbstractScript implements Ru
             return row;
         }
         Map<String, Object> original = (Map<String, Object>) row;
-        LinkedHashMap<String, Object> ordered = new LinkedHashMap<>(columns.size());
+        LinkedHashMap<String, Object> ordered = LinkedHashMap.newLinkedHashMap(columns.size());
         for (String col : columns) {
             ordered.put(col, original.get(col));
         }
