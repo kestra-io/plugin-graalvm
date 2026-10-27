@@ -1,4 +1,4 @@
-id: evalRuby
+id: graalvm_ruby
 namespace: company.team
 
 tasks:
