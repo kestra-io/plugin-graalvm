@@ -1,5 +1,5 @@
 id: graalvm_ruby
-namespace: company.team
+namespace: sanitychecks.plugin-graalvm
 
 tasks:
   - id: evalRuby

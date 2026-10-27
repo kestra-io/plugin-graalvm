@@ -1,5 +1,5 @@
 id: graalvm_python
-namespace: sanitychecks
+namespace: sanitychecks.plugin-graalvm
 
 tasks:
   - id: evalPython
