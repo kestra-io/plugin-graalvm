@@ -1,5 +1,5 @@
 id: graalvm_js
-namespace: sanitychecks
+namespace: sanitychecks.plugin-graalvm
 
 tasks:
   - id: evalJs
